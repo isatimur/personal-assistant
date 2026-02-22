@@ -6,7 +6,10 @@ plugins {
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
 
-    repositories { mavenCentral() }
+    repositories {
+        mavenCentral()
+        maven("https://jitpack.io")
+    }
 
     dependencies {
         val implementation by configurations

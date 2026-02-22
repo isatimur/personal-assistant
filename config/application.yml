@@ -1,0 +1,27 @@
+telegram:
+  token: "YOUR_TELEGRAM_BOT_TOKEN"
+
+llm:
+  provider: openai       # openai | anthropic | ollama
+  model: gpt-4o-mini
+  api-key: "YOUR_API_KEY"
+  base-url: null
+
+memory:
+  db-path: ~/.assistant/memory.db
+  window-size: 20
+
+tools:
+  shell:
+    timeout-seconds: 30
+    max-output-chars: 10000
+  web:
+    max-content-chars: 8000
+  email:
+    enabled: false
+    imap-host: imap.gmail.com
+    imap-port: 993
+    smtp-host: smtp.gmail.com
+    smtp-port: 587
+    username: ""
+    password: ""
