@@ -35,4 +35,22 @@ class PortsTest {
         assertEquals(1, history.size)
         assertEquals("hi", history.first().text)
     }
+
+    @Test
+    fun `EmbeddingPort embed returns FloatArray`() = runTest {
+        val port = mockk<EmbeddingPort>()
+        coEvery { port.embed(any()) } returns floatArrayOf(0.1f, 0.2f, 0.3f)
+        val result = port.embed("hello world")
+        assertEquals(3, result.size)
+        assertEquals(0.1f, result[0], 1e-6f)
+    }
+
+    @Test
+    fun `MemoryPort search returns list of strings`() = runTest {
+        val port = mockk<MemoryPort>()
+        coEvery { port.search("user1", "kotlin", 5) } returns listOf("Kotlin is great", "Coroutines rock")
+        val result = port.search("user1", "kotlin", 5)
+        assertEquals(2, result.size)
+        assertTrue(result.contains("Kotlin is great"))
+    }
 }
