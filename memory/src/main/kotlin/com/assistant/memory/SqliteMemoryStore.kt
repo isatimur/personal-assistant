@@ -6,6 +6,8 @@ import com.assistant.ports.MemoryPort
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.PrintWriter
 import java.nio.ByteBuffer
@@ -87,60 +89,71 @@ class SqliteMemoryStore(
 
     override suspend fun append(sessionId: String, message: Message) {
         val now = System.currentTimeMillis()
-        transaction(db) {
-            Messages.insert {
-                it[Messages.sessionId] = sessionId
-                it[userId] = message.sender
-                it[text] = message.text
-                it[channel] = message.channel.name
-                it[createdAt] = now
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                Messages.insert {
+                    it[Messages.sessionId] = sessionId
+                    it[userId] = message.sender
+                    it[text] = message.text
+                    it[channel] = message.channel.name
+                    it[createdAt] = now
+                }
             }
         }
 
         val chunks = chunk(message.text)
         for (chunkText in chunks) {
             val embeddingBytes = embeddingPort?.embed(chunkText)?.toBytes()
-            transaction(db) {
-                Chunks.insert {
-                    it[Chunks.sessionId] = sessionId
-                    it[Chunks.userId] = message.sender
-                    it[Chunks.text] = chunkText
-                    it[Chunks.embedding] = embeddingBytes
-                    it[Chunks.createdAt] = now
+            withContext(Dispatchers.IO) {
+                transaction(db) {
+                    Chunks.insert {
+                        it[Chunks.sessionId] = sessionId
+                        it[Chunks.userId] = message.sender
+                        it[Chunks.text] = chunkText
+                        it[Chunks.embedding] = embeddingBytes
+                        it[Chunks.createdAt] = now
+                    }
                 }
             }
         }
 
         if (memoryDir.exists()) {
             val date = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            File(memoryDir, "$date.md").appendText("${message.sender}: ${message.text}\n")
+            withContext(Dispatchers.IO) {
+                File(memoryDir, "$date.md").appendText("${message.sender}: ${message.text}\n")
+            }
         }
     }
 
     override suspend fun history(sessionId: String, limit: Int): List<Message> =
-        transaction(db) {
-            Messages.selectAll()
-                .where { Messages.sessionId eq sessionId }
-                .orderBy(Messages.createdAt, SortOrder.DESC)
-                .limit(limit)
-                .map { row ->
-                    Message(
-                        sender = row[Messages.userId],
-                        text = row[Messages.text],
-                        channel = Channel.valueOf(row[Messages.channel])
-                    )
-                }
-                .reversed()
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                Messages.selectAll()
+                    .where { Messages.sessionId eq sessionId }
+                    .orderBy(Messages.createdAt, SortOrder.DESC)
+                    .limit(limit)
+                    .map { row ->
+                        Message(
+                            sender = row[Messages.userId],
+                            text = row[Messages.text],
+                            channel = Channel.valueOf(row[Messages.channel])
+                        )
+                    }
+                    .reversed()
+            }
         }
 
-    override suspend fun facts(userId: String): List<String> {
-        if (!memoryFile.exists()) return emptyList()
-        return memoryFile.readLines().filter { it.isNotBlank() }.map { it.trimStart('-', ' ') }
-    }
+    override suspend fun facts(userId: String): List<String> =
+        withContext(Dispatchers.IO) {
+            if (!memoryFile.exists()) return@withContext emptyList()
+            memoryFile.readLines().filter { it.isNotBlank() }.map { it.trimStart('-', ' ') }
+        }
 
     override suspend fun saveFact(userId: String, fact: String) {
-        memoryDir.mkdirs()
-        memoryFile.appendText("- $fact\n")
+        withContext(Dispatchers.IO) {
+            memoryDir.mkdirs()
+            memoryFile.appendText("- $fact\n")
+        }
     }
 
     override suspend fun search(userId: String, query: String, limit: Int): List<String> {
@@ -156,28 +169,30 @@ class SqliteMemoryStore(
         val sanitized = sanitizeFtsQuery(query)
         val candidates = mutableListOf<Candidate>()
 
-        transaction(db) {
-            try {
-                val sql = """
-                    SELECT c.text, bm25(chunks_fts) AS bm25_score, c.embedding, c.created_at
-                    FROM chunks_fts
-                    JOIN chunks c ON c.id = chunks_fts.rowid
-                    WHERE chunks_fts MATCH ? AND c.user_id = ?
-                    ORDER BY bm25(chunks_fts)
-                    LIMIT 20
-                """.trimIndent()
-                exec(sql, listOf(TextColumnType() to sanitized, VarCharColumnType(128) to userId), null) { rs ->
-                    while (rs.next()) {
-                        candidates.add(Candidate(
-                            text = rs.getString("text"),
-                            bm25 = rs.getDouble("bm25_score"),
-                            embeddingBytes = rs.getBytes("embedding"),
-                            createdAt = rs.getLong("created_at")
-                        ))
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                try {
+                    val sql = """
+                        SELECT c.text, bm25(chunks_fts) AS bm25_score, c.embedding, c.created_at
+                        FROM chunks_fts
+                        JOIN chunks c ON c.id = chunks_fts.rowid
+                        WHERE chunks_fts MATCH ? AND c.user_id = ?
+                        ORDER BY bm25(chunks_fts)
+                        LIMIT 20
+                    """.trimIndent()
+                    exec(sql, listOf(TextColumnType() to sanitized, VarCharColumnType(128) to userId), null) { rs ->
+                        while (rs.next()) {
+                            candidates.add(Candidate(
+                                text = rs.getString("text"),
+                                bm25 = rs.getDouble("bm25_score"),
+                                embeddingBytes = rs.getBytes("embedding"),
+                                createdAt = rs.getLong("created_at")
+                            ))
+                        }
                     }
+                } catch (_: Exception) {
+                    // FTS5 query syntax error or no data — return empty
                 }
-            } catch (_: Exception) {
-                // FTS5 query syntax error or no data — return empty
             }
         }
 
