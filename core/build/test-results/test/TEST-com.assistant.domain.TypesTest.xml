@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.assistant.domain.TypesTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-02-22T14:15:02" hostname="MacBook-Pro-Timur.local" time="0.035">
+  <properties/>
+  <testcase name="Observation can be success or error()" classname="com.assistant.domain.TypesTest" time="0.022"/>
+  <testcase name="ToolCall holds name and arguments()" classname="com.assistant.domain.TypesTest" time="0.005"/>
+  <testcase name="Message holds sender text and channel()" classname="com.assistant.domain.TypesTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
