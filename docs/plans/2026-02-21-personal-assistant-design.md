@@ -59,7 +59,7 @@ personal-assistant/
 │       ├── gateway/Gateway.kt
 │       ├── agent/AgentEngine.kt
 │       ├── agent/ContextAssembler.kt
-│       └── ports/                # LlmPort, ToolPort, MemoryPort
+│       └── ports/                # LlmPort, ToolPort, MemoryPort, EmbeddingPort
 │
 ├── channels/                     # Telegram adapter
 │   └── src/main/kotlin/
@@ -67,7 +67,8 @@ personal-assistant/
 │
 ├── providers/                    # LLM provider wiring via LangChain4j
 │   └── src/main/kotlin/
-│       └── llm/LangChain4jProvider.kt
+│       ├── llm/LangChain4jProvider.kt
+│       └── llm/LangChain4jEmbeddingProvider.kt
 │
 ├── tools/                        # Concrete tool implementations
 │   └── src/main/kotlin/
@@ -91,11 +92,12 @@ personal-assistant/
 
 | Dependency | Purpose |
 |---|---|
-| `langchain4j` | Model-agnostic LLM client + ReAct agent loop + tool calling |
+| `langchain4j` | Model-agnostic LLM + embedding client + ReAct agent loop + tool calling |
 | `kotlin-telegram-bot` | Telegram Bot API integration |
 | `jetbrains/exposed` | SQLite ORM for memory persistence |
 | `kotlinx.coroutines` | Async throughout |
 | `kaml` | YAML config parsing |
+| `sqlite-jdbc` | FTS5 full-text search + vector blob storage |
 
 ---
 
@@ -104,7 +106,7 @@ personal-assistant/
 1. Telegram message arrives
 2. `TelegramAdapter` normalizes → `Message(sender, text, attachments, channelMeta)`
 3. `Gateway` routes to `AgentEngine`, creates/resumes `Session`
-4. `ContextAssembler` builds prompt: system prompt + long-term memory snippets + last N messages + user message
+4. `ContextAssembler` builds prompt: system prompt + known facts + semantically relevant past context (hybrid search) + last N messages + user message
 5. **ReAct Loop:**
    - LLM reasons → produces `Thought + Action` (tool call) or `FinalAnswer`
    - If tool call → `ToolRegistry` dispatches to correct tool
@@ -128,9 +130,30 @@ personal-assistant/
 
 ## Memory System
 
-Two-tier:
-- **Short-term**: sliding window of last N messages (in-process, configurable)
-- **Long-term**: SQLite via Exposed — stores conversation history and extracted facts (name, preferences, recurring tasks). LangChain4j memory APIs handle retrieval.
+Three-tier hybrid RAG (OpenClaw-inspired):
+
+- **Short-term**: sliding window of last N messages per session (configurable via `window-size`)
+- **Long-term search**: message text is chunked (512 chars, 80-char overlap) and stored in a `chunks` table. Retrieval uses a hybrid score:
+  - **FTS5 BM25** keyword score (always active)
+  - **Vector cosine similarity** against a query embedding (when `embedding:` config is present)
+  - Hybrid weight: `0.3 × vector + 0.7 × BM25`
+  - **Temporal decay**: score halves every 30 days (`exp(-ln2 × ageDays / 30)`)
+  - Top-K results injected into the system prompt under "Relevant past context:"
+- **Durable facts**: bullet-point file at `~/.assistant/memory/MEMORY.md`, written by `saveFact()` and read at every turn. Daily conversation log written to `~/.assistant/memory/YYYY-MM-DD.md`.
+
+Embedding is optional. Without it, retrieval is FTS5-only (no new infrastructure required). Enable by adding an `embedding:` block to `application.yml`:
+
+```yaml
+embedding:
+  provider: openai          # openai | ollama
+  model: text-embedding-3-small
+  api-key: "YOUR_KEY"
+# Or local:
+# embedding:
+#   provider: ollama
+#   model: nomic-embed-text
+#   base-url: http://localhost:11434
+```
 
 ---
 
@@ -157,13 +180,19 @@ llm:
 memory:
   db-path: ~/.assistant/memory.db
   window-size: 20
+  search-limit: 5              # max relevant chunks injected per turn
+
+# embedding:                   # optional — enables vector search
+#   provider: openai           # openai | ollama
+#   model: text-embedding-3-small
+#   api-key: "YOUR_KEY"
 
 tools:
   shell:
     timeout-seconds: 30
     max-output-chars: 10000
   web:
-    search-engine: duckduckgo   # duckduckgo | serpapi
+    max-content-chars: 8000
 ```
 
 ---
