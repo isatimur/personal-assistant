@@ -6,11 +6,13 @@ import com.assistant.ports.*
 class ContextAssembler(
     private val memory: MemoryPort,
     private val toolRegistry: ToolRegistry,
-    private val windowSize: Int = 20
+    private val windowSize: Int = 20,
+    private val searchLimit: Int = 5
 ) {
     suspend fun build(session: Session, currentMessage: Message): List<ChatMessage> {
         val facts = memory.facts(session.userId)
         val history = memory.history(session.id, windowSize)
+        val relevant = memory.search(session.userId, currentMessage.text, searchLimit)
 
         val systemPrompt = buildString {
             appendLine("You are a personal AI assistant running locally. Use tools to take real actions.")
@@ -23,6 +25,10 @@ class ContextAssembler(
             if (facts.isNotEmpty()) {
                 appendLine("\nKnown facts about this user:")
                 facts.forEach { appendLine("- $it") }
+            }
+            if (relevant.isNotEmpty()) {
+                appendLine("\nRelevant past context:")
+                relevant.forEach { appendLine(it) }
             }
         }
 

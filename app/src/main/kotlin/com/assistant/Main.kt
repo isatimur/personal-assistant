@@ -2,6 +2,8 @@ package com.assistant
 
 import com.assistant.agent.*
 import com.assistant.gateway.Gateway
+import com.assistant.llm.EmbeddingConfig
+import com.assistant.llm.LangChain4jEmbeddingProvider
 import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
@@ -18,7 +20,10 @@ fun main() {
 
     val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
     File(dbPath).parentFile.mkdirs()
-    val memory = SqliteMemoryStore(dbPath).also { it.init() }
+    val embeddingPort = config.embedding?.let {
+        LangChain4jEmbeddingProvider(EmbeddingConfig(it.provider, it.model, it.apiKey, it.baseUrl))
+    }
+    val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
 
     val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl))
 
@@ -34,7 +39,7 @@ fun main() {
     }
 
     val registry = ToolRegistry(tools)
-    val assembler = ContextAssembler(memory, registry, config.memory.windowSize)
+    val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit)
     val engine = AgentEngine(llm, memory, registry, assembler)
     val gateway = Gateway(engine)
     val telegram = TelegramAdapter(config.telegram.token, gateway)
