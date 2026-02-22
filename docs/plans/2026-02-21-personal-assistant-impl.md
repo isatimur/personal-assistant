@@ -1926,6 +1926,8 @@ object Chunks : LongIdTable("chunks") {
 
 `facts()` / `saveFact()` — file-based: reads/writes `~/.assistant/memory/MEMORY.md`.
 
+Every `suspend` method wraps its blocking JDBC and file I/O in `withContext(Dispatchers.IO)` so the functions are safe to call from any coroutine context, not just one that already runs on `Dispatchers.IO`.
+
 Pure Kotlin internal helpers (all unit-tested):
 - `chunk(text, maxLen, overlap)` — sliding window chunker
 - `cosine(a, b)` — dot product cosine similarity
