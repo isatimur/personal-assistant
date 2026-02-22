@@ -297,6 +297,21 @@ class PortsTest {
         assertEquals(1, history.size)
         assertEquals("hi", history.first().text)
     }
+
+    @Test
+    fun `EmbeddingPort embed returns FloatArray`() = runTest {
+        val port = mockk<EmbeddingPort>()
+        coEvery { port.embed(any()) } returns floatArrayOf(0.1f, 0.2f, 0.3f)
+        val result = port.embed("hello world")
+        assertEquals(3, result.size)
+    }
+
+    @Test
+    fun `MemoryPort search returns list of strings`() = runTest {
+        val port = mockk<MemoryPort>()
+        coEvery { port.search("user1", "kotlin", 5) } returns listOf("Kotlin is great")
+        assertEquals(1, port.search("user1", "kotlin", 5).size)
+    }
 }
 ```
 
@@ -327,11 +342,16 @@ interface ToolPort {
     suspend fun execute(call: ToolCall): Observation
 }
 
+interface EmbeddingPort {
+    suspend fun embed(text: String): FloatArray
+}
+
 interface MemoryPort {
     suspend fun append(sessionId: String, message: Message)
     suspend fun history(sessionId: String, limit: Int): List<Message>
     suspend fun facts(userId: String): List<String>
     suspend fun saveFact(userId: String, fact: String)
+    suspend fun search(userId: String, query: String, limit: Int = 5): List<String>
 }
 ```
 
@@ -503,6 +523,8 @@ git add memory/
 git commit -m "feat(memory): add SQLite memory store with conversation history and facts"
 ```
 
+> **Note:** This initial implementation was superseded by the hybrid RAG rework in Task 17. The final `SqliteMemoryStore` uses FTS5 chunked search, optional vector embeddings, temporal decay, and file-based facts. See Task 17 for the complete implementation.
+
 ---
 
 ### Task 5: LLM provider — LangChain4j
@@ -609,6 +631,8 @@ Expected: PASS (all 4 tests — construction only, no real API calls)
 git add providers/
 git commit -m "feat(providers): add LangChain4j LLM provider supporting openai/anthropic/ollama"
 ```
+
+> **Addition (Task 17):** A second provider file `LangChain4jEmbeddingProvider.kt` was added to this module, implementing `EmbeddingPort` for OpenAI and Ollama embedding models. No new Gradle dependencies were needed — the embedding model classes ship with the existing `langchain4j-open-ai` and `langchain4j-ollama` artifacts.
 
 ---
 
@@ -1207,6 +1231,7 @@ class ContextAssemblerTest {
     fun `system message is first`() = runTest {
         coEvery { memory.history(any(), any()) } returns emptyList()
         coEvery { memory.facts(any()) } returns emptyList()
+        coEvery { memory.search(any(), any(), any()) } returns emptyList()
         every { registry.describe() } returns "Tool: file_system\nFile ops"
 
         val assembler = ContextAssembler(memory, registry, 10)
@@ -1219,6 +1244,7 @@ class ContextAssemblerTest {
     fun `history and facts are included`() = runTest {
         coEvery { memory.history(any(), any()) } returns listOf(Message("user1", "previous", Channel.TELEGRAM))
         coEvery { memory.facts(any()) } returns listOf("User likes brevity")
+        coEvery { memory.search(any(), any(), any()) } returns emptyList()
         every { registry.describe() } returns ""
 
         val assembler = ContextAssembler(memory, registry, 10)
@@ -1226,6 +1252,20 @@ class ContextAssemblerTest {
         val contents = messages.map { it.content }
         assertTrue(contents.any { it.contains("previous") })
         assertTrue(contents.any { it.contains("User likes brevity") })
+    }
+
+    @Test
+    fun `relevant chunks from search are included in system prompt`() = runTest {
+        coEvery { memory.history(any(), any()) } returns emptyList()
+        coEvery { memory.facts(any()) } returns emptyList()
+        coEvery { memory.search(any(), any(), any()) } returns listOf("We discussed Kotlin last week")
+        every { registry.describe() } returns ""
+
+        val assembler = ContextAssembler(memory, registry, 10, searchLimit = 5)
+        val messages = assembler.build(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "remind me", Channel.TELEGRAM))
+        val system = messages.first().content
+        assertTrue(system.contains("Relevant past context"))
+        assertTrue(system.contains("We discussed Kotlin last week"))
     }
 }
 ```
@@ -1249,11 +1289,13 @@ import com.assistant.ports.*
 class ContextAssembler(
     private val memory: MemoryPort,
     private val toolRegistry: ToolRegistry,
-    private val windowSize: Int = 20
+    private val windowSize: Int = 20,
+    private val searchLimit: Int = 5
 ) {
     suspend fun build(session: Session, currentMessage: Message): List<ChatMessage> {
         val facts = memory.facts(session.userId)
         val history = memory.history(session.id, windowSize)
+        val relevant = memory.search(session.userId, currentMessage.text, searchLimit)
 
         val systemPrompt = buildString {
             appendLine("You are a personal AI assistant running locally. Use tools to take real actions.")
@@ -1266,6 +1308,10 @@ class ContextAssembler(
             if (facts.isNotEmpty()) {
                 appendLine("\nKnown facts about this user:")
                 facts.forEach { appendLine("- $it") }
+            }
+            if (relevant.isNotEmpty()) {
+                appendLine("\nRelevant past context:")
+                relevant.forEach { appendLine(it) }
             }
         }
 
@@ -1650,6 +1696,12 @@ llm:
 memory:
   db-path: ~/.assistant/memory.db
   window-size: 20
+  search-limit: 5
+
+# embedding:                   # optional — enables vector search
+#   provider: openai           # openai | ollama
+#   model: text-embedding-3-small
+#   api-key: "YOUR_KEY"
 
 tools:
   shell:
@@ -1678,10 +1730,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.io.File
 
-@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig)
+@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null)
 @Serializable data class TelegramConfig(val token: String)
 @Serializable data class LlmConfig(val provider: String, val model: String, @SerialName("api-key") val apiKey: String? = null, @SerialName("base-url") val baseUrl: String? = null)
-@Serializable data class MemoryConfig(@SerialName("db-path") val dbPath: String, @SerialName("window-size") val windowSize: Int)
+@Serializable data class MemoryConfig(@SerialName("db-path") val dbPath: String, @SerialName("window-size") val windowSize: Int, @SerialName("search-limit") val searchLimit: Int = 5)
+@Serializable data class EmbeddingCfg(val provider: String, val model: String, @SerialName("api-key") val apiKey: String? = null, @SerialName("base-url") val baseUrl: String? = null)
 @Serializable data class ToolsConfig(val shell: ShellConfig = ShellConfig(), val web: WebConfig = WebConfig(), val email: EmailToolConfig = EmailToolConfig())
 @Serializable data class ShellConfig(@SerialName("timeout-seconds") val timeoutSeconds: Long = 30, @SerialName("max-output-chars") val maxOutputChars: Int = 10_000)
 @Serializable data class WebConfig(@SerialName("max-content-chars") val maxContentChars: Int = 8_000)
@@ -1699,6 +1752,8 @@ package com.assistant
 
 import com.assistant.agent.*
 import com.assistant.gateway.Gateway
+import com.assistant.llm.EmbeddingConfig
+import com.assistant.llm.LangChain4jEmbeddingProvider
 import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
@@ -1715,7 +1770,10 @@ fun main() {
 
     val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
     File(dbPath).parentFile.mkdirs()
-    val memory = SqliteMemoryStore(dbPath).also { it.init() }
+    val embeddingPort = config.embedding?.let {
+        LangChain4jEmbeddingProvider(EmbeddingConfig(it.provider, it.model, it.apiKey, it.baseUrl))
+    }
+    val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
 
     val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl))
 
@@ -1731,7 +1789,7 @@ fun main() {
     }
 
     val registry = ToolRegistry(tools)
-    val assembler = ContextAssembler(memory, registry, config.memory.windowSize)
+    val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit)
     val engine = AgentEngine(llm, memory, registry, assembler)
     val gateway = Gateway(engine)
     val telegram = TelegramAdapter(config.telegram.token, gateway)
@@ -1829,10 +1887,70 @@ git commit -m "feat(scripts): add macOS launchd service for auto-start on login"
 
 ---
 
+### Task 17: Hybrid RAG memory rework
+
+**Goal:** Replace the simple append-log memory with chunked storage, FTS5 keyword search, optional vector similarity search, temporal decay, and file-based durable facts.
+
+**Files changed:**
+- `core/src/main/kotlin/com/assistant/ports/Ports.kt` — add `EmbeddingPort`, add `search()` to `MemoryPort`
+- `providers/src/main/kotlin/com/assistant/llm/LangChain4jEmbeddingProvider.kt` (new) — implements `EmbeddingPort` for OpenAI and Ollama
+- `memory/src/main/kotlin/com/assistant/memory/SqliteMemoryStore.kt` — major rewrite (see below)
+- `core/src/main/kotlin/com/assistant/agent/ContextAssembler.kt` — add `searchLimit` param, inject relevant chunks
+- `app/src/main/kotlin/com/assistant/Config.kt` — add `EmbeddingCfg`, `searchLimit`
+- `app/src/main/kotlin/com/assistant/Main.kt` — wire `EmbeddingPort` and `searchLimit`
+- `config/application.yml` — add `search-limit`, commented `embedding:` block
+
+**SqliteMemoryStore changes:**
+
+New schema alongside the existing `Messages` table:
+```kotlin
+object Chunks : LongIdTable("chunks") {
+    val sessionId = varchar("session_id", 128)
+    val userId    = varchar("user_id", 128)
+    val text      = text("text")
+    val embedding = binary("embedding").nullable()  // little-endian IEEE 754 FloatArray
+    val createdAt = long("created_at")
+}
+// chunks_fts: FTS5 virtual table synced via INSERT/DELETE/UPDATE triggers
+```
+
+`append()` now also chunks message text (512-char max, 80-char overlap), optionally embeds each chunk, inserts into `Chunks`, and appends to `~/.assistant/memory/YYYY-MM-DD.md`.
+
+`search()` pipeline:
+1. FTS5 BM25 candidates (top 20) — sanitized query terms wrapped in double-quotes
+2. Normalize BM25 scores to [0,1]
+3. Cosine similarity against query embedding (if `EmbeddingPort` configured)
+4. Hybrid score: `0.3 × vectorScore + 0.7 × bm25Score`
+5. Temporal decay: `score × exp(-ln2 × ageDays / 30)` (30-day half-life)
+6. Return top `limit` chunks by decayed score
+
+`facts()` / `saveFact()` — file-based: reads/writes `~/.assistant/memory/MEMORY.md`.
+
+Pure Kotlin internal helpers (all unit-tested):
+- `chunk(text, maxLen, overlap)` — sliding window chunker
+- `cosine(a, b)` — dot product cosine similarity
+- `temporalDecay(score, createdAtMs)` — exponential half-life decay
+- `FloatArray.toBytes()` / `ByteArray.toFloatArray()` — little-endian IEEE 754 round-trip
+
+**New tests (12 added, 49 total):**
+- `SqliteMemoryStoreTest`: FTS search match/no-match/blank, chunk splitting, cosine identical/orthogonal, byte round-trip, file-based facts
+- `ContextAssemblerTest`: search stub in existing tests + relevant-context injection test
+- `PortsTest`: `EmbeddingPort.embed` and `MemoryPort.search` mock tests
+
+**Verification:**
+```bash
+./gradlew test -x :tools:test   # 49 tests, all pass
+./gradlew :app:shadowJar        # fat JAR builds clean
+```
+
+---
+
 ## Done
 
-All 16 tasks complete. The assistant runs locally, auto-starts on login, and responds to your Telegram messages.
+All 17 tasks complete. The assistant runs locally, auto-starts on login, and responds to your Telegram messages with relevant past context surfaced from hybrid semantic search.
 
 **To configure:** Edit `config/application.yml` with your Telegram bot token and LLM API key, then rebuild and reinstall.
 
 **To switch models:** Change `llm.provider` and `llm.model` in `application.yml` — no code changes needed.
+
+**To enable vector search:** Uncomment and fill in the `embedding:` block in `application.yml`.
