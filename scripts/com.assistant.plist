@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>Label</key><string>com.assistant</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/java</string>
+        <string>-jar</string>
+        <string>ASSISTANT_JAR_PATH</string>
+    </array>
+    <key>WorkingDirectory</key><string>ASSISTANT_WORKING_DIR</string>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>ASSISTANT_HOME/.assistant/assistant.log</string>
+    <key>StandardErrorPath</key><string>ASSISTANT_HOME/.assistant/assistant-error.log</string>
+</dict></plist>
