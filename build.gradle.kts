@@ -16,7 +16,7 @@ subprojects {
         testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
         testImplementation("io.mockk:mockk:1.13.12")
         testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+        testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.0")
     }
 
     tasks.withType<Test> { useJUnitPlatform() }
