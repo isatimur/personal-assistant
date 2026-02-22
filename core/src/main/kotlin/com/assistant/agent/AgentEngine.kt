@@ -11,6 +11,10 @@ class AgentEngine(
     private val assembler: ContextAssembler,
     private val maxSteps: Int = 10
 ) {
+    private val actionRegex = Regex("""ACTION\s*:\s*(.+)""", RegexOption.IGNORE_CASE)
+    private val argsRegex   = Regex("""ARGS\s*:\s*([\s\S]+?)(?=\nACTION|\nFINAL|\nTHOUGHT|$)""", RegexOption.IGNORE_CASE)
+    private val finalRegex  = Regex("""FINAL\s*(?:ANSWER)?\s*:\s*([\s\S]+)""", RegexOption.IGNORE_CASE)
+
     suspend fun process(session: Session, message: Message): String {
         memory.append(session.id, message)
         val context = assembler.build(session, message).toMutableList()
@@ -19,22 +23,26 @@ class AgentEngine(
             val response = llm.complete(context)
             context.add(ChatMessage("assistant", response))
 
-            if (response.contains("FINAL:")) {
-                val answer = response.substringAfter("FINAL:").trim()
-                memory.append(session.id, Message("assistant", answer, session.channel))
-                return answer
+            val finalAnswer = finalRegex.find(response)?.groupValues?.get(1)?.trim()
+            if (finalAnswer != null) {
+                memory.append(session.id, Message("assistant", finalAnswer, session.channel))
+                return finalAnswer
             }
 
-            if (response.contains("ACTION:")) {
-                val toolName = response.substringAfter("ACTION:").lines().first().trim()
-                val argsLine = response.substringAfter("ARGS:").lines().first().trim()
-                val args = parseArgs(argsLine)
+            val toolName = actionRegex.find(response)?.groupValues?.get(1)?.trim()
+            if (toolName != null) {
+                val argsText = argsRegex.find(response)?.groupValues?.get(1)?.trim() ?: "{}"
+                val args = parseArgs(argsText)
                 val observation = toolRegistry.execute(ToolCall(toolName, args))
                 val obs = when (observation) {
                     is Observation.Success -> "OBSERVATION: ${observation.result}"
                     is Observation.Error -> "OBSERVATION ERROR: ${observation.message}"
                 }
                 context.add(ChatMessage("user", obs))
+            } else {
+                // No recognised marker — treat entire response as final answer
+                memory.append(session.id, Message("assistant", response, session.channel))
+                return response
             }
         }
 

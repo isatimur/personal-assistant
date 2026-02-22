@@ -1,5 +1,6 @@
 telegram:
   token: "YOUR_TELEGRAM_BOT_TOKEN"
+  timeout-ms: 120000
 
 llm:
   provider: openai       # openai | anthropic | ollama
@@ -28,6 +29,9 @@ tools:
     max-output-chars: 10000
   web:
     max-content-chars: 8000
+  filesystem:
+    allowed-paths:
+      - "~"
   email:
     enabled: false
     imap-host: imap.gmail.com

@@ -51,4 +51,41 @@ class AgentEngineTest {
         val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "loop", Channel.TELEGRAM))
         assertTrue(response.isNotBlank())
     }
+
+    @Test
+    fun `parses multi-line ARGS correctly`() = runTest {
+        val multiLineResponse = """
+            THOUGHT: need to write a file
+            ACTION: file_write
+            ARGS: {
+              "path": "/tmp/test.txt",
+              "content": "hello world"
+            }
+        """.trimIndent()
+        val capturedCall = slot<ToolCall>()
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "write"))
+        coEvery { llm.complete(any()) } returnsMany listOf(
+            multiLineResponse,
+            "FINAL: Done"
+        )
+        coEvery { toolRegistry.execute(capture(capturedCall)) } returns Observation.Success("Written")
+        coEvery { memory.append(any(), any()) } just runs
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
+        engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "write", Channel.TELEGRAM))
+
+        assertEquals("file_write", capturedCall.captured.name)
+        assertEquals("/tmp/test.txt", capturedCall.captured.arguments["path"])
+    }
+
+    @Test
+    fun `malformed response with no markers returned as final answer`() = runTest {
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
+        coEvery { llm.complete(any()) } returns "I am just talking without any markers."
+        coEvery { memory.append(any(), any()) } just runs
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
+        val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+        assertEquals("I am just talking without any markers.", response)
+    }
 }

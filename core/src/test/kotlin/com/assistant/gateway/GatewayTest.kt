@@ -36,4 +36,19 @@ class GatewayTest {
         gateway.handle(Message("user2", "hi", Channel.TELEGRAM))
         assertNotEquals(sessions[0].id, sessions[1].id)
     }
+
+    @Test
+    fun `idle session is evicted after TTL and recreated on next message`() = runTest {
+        val sessions = mutableListOf<Session>()
+        coEvery { engine.process(capture(sessions), any()) } returns "ok"
+        // Use a TTL of 1 ms so sessions expire immediately
+        val gateway = Gateway(engine, sessionTtlMs = 1L)
+        gateway.handle(Message("user1", "first", Channel.TELEGRAM))
+        Thread.sleep(5)  // let the session expire
+        gateway.handle(Message("user1", "second", Channel.TELEGRAM))
+        // Sessions should be different objects (evicted + recreated)
+        assertEquals(2, sessions.size)
+        // Both have the same logical ID (same user+channel key)
+        assertEquals(sessions[0].id, sessions[1].id)
+    }
 }

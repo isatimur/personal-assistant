@@ -8,10 +8,13 @@ import java.nio.file.Files
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class FileSystemToolTest {
-    private val tool = FileSystemTool()
     private lateinit var tmpDir: java.nio.file.Path
+    private lateinit var tool: FileSystemTool
 
-    @BeforeAll fun setup() { tmpDir = Files.createTempDirectory("assistant-test") }
+    @BeforeAll fun setup() {
+        tmpDir = Files.createTempDirectory("assistant-test")
+        tool = FileSystemTool(allowedPaths = listOf(tmpDir.toString()))
+    }
     @AfterAll fun cleanup() { tmpDir.toFile().deleteRecursively() }
 
     @Test
@@ -41,5 +44,40 @@ class FileSystemToolTest {
     @Test
     fun `unknown command returns error`() = runTest {
         assertTrue(tool.execute(ToolCall("file_unknown", mapOf())) is Observation.Error)
+    }
+
+    // ── sandboxing ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `read outside allowed root returns access denied error`() = runTest {
+        val result = tool.execute(ToolCall("file_read", mapOf("path" to "/etc/passwd")))
+        assertTrue(result is Observation.Error)
+        assertTrue((result as Observation.Error).message.contains("Access denied"))
+    }
+
+    @Test
+    fun `write outside allowed root returns access denied error`() = runTest {
+        val result = tool.execute(ToolCall("file_write", mapOf("path" to "/tmp/evil.txt", "content" to "bad")))
+        assertTrue(result is Observation.Error)
+        assertTrue((result as Observation.Error).message.contains("Access denied"))
+    }
+
+    @Test
+    fun `list outside allowed root returns access denied error`() = runTest {
+        val result = tool.execute(ToolCall("file_list", mapOf("path" to "/etc")))
+        assertTrue(result is Observation.Error)
+        assertTrue((result as Observation.Error).message.contains("Access denied"))
+    }
+
+    // ── oversized file ────────────────────────────────────────────────────────
+
+    @Test
+    fun `reading file over 100 KB returns truncated content with notice`() = runTest {
+        val bigFile = tmpDir.resolve("big.txt").toFile()
+        bigFile.writeBytes(ByteArray(110 * 1024) { 'X'.code.toByte() })
+        val result = tool.execute(ToolCall("file_read", mapOf("path" to bigFile.absolutePath)))
+        assertTrue(result is Observation.Success)
+        val text = (result as Observation.Success).result
+        assertTrue(text.contains("truncated"), "Expected truncation notice in: $text")
     }
 }

@@ -2,6 +2,8 @@ package com.assistant.agent
 
 import com.assistant.domain.*
 import com.assistant.ports.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 class ContextAssembler(
     private val memory: MemoryPort,
@@ -10,9 +12,12 @@ class ContextAssembler(
     private val searchLimit: Int = 5
 ) {
     suspend fun build(session: Session, currentMessage: Message): List<ChatMessage> {
-        val facts = memory.facts(session.userId)
-        val history = memory.history(session.id, windowSize)
-        val relevant = memory.search(session.userId, currentMessage.text, searchLimit)
+        val (facts, history, relevant) = coroutineScope {
+            val f = async { memory.facts(session.userId) }
+            val h = async { memory.history(session.id, windowSize) }
+            val r = async { memory.search(session.userId, currentMessage.text, searchLimit) }
+            Triple(f.await(), h.await(), r.await())
+        }
 
         val systemPrompt = buildString {
             appendLine("You are a personal AI assistant running locally. Use tools to take real actions.")

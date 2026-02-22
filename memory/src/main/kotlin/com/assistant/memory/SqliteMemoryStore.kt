@@ -7,6 +7,8 @@ import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.PrintWriter
@@ -57,6 +59,7 @@ class SqliteMemoryStore(
     }
 
     private val memoryFile = File(memoryDir, "MEMORY.md")
+    private val fileMutex = Mutex()
 
     object Messages : LongIdTable("messages") {
         val sessionId = varchar("session_id", 128)
@@ -89,6 +92,11 @@ class SqliteMemoryStore(
 
     override suspend fun append(sessionId: String, message: Message) {
         val now = System.currentTimeMillis()
+        val chunks = chunk(message.text)
+        // Pre-collect embeddings (suspend calls) before entering the transaction
+        val chunkEmbeddings: List<ByteArray?> = chunks.map { chunkText ->
+            embeddingPort?.embed(chunkText)?.toBytes()
+        }
         withContext(Dispatchers.IO) {
             transaction(db) {
                 Messages.insert {
@@ -98,19 +106,12 @@ class SqliteMemoryStore(
                     it[channel] = message.channel.name
                     it[createdAt] = now
                 }
-            }
-        }
-
-        val chunks = chunk(message.text)
-        for (chunkText in chunks) {
-            val embeddingBytes = embeddingPort?.embed(chunkText)?.toBytes()
-            withContext(Dispatchers.IO) {
-                transaction(db) {
+                chunks.forEachIndexed { i, chunkText ->
                     Chunks.insert {
                         it[Chunks.sessionId] = sessionId
                         it[Chunks.userId] = message.sender
                         it[Chunks.text] = chunkText
-                        it[Chunks.embedding] = embeddingBytes
+                        it[Chunks.embedding] = chunkEmbeddings[i]
                         it[Chunks.createdAt] = now
                     }
                 }
@@ -119,8 +120,10 @@ class SqliteMemoryStore(
 
         if (memoryDir.exists()) {
             val date = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            withContext(Dispatchers.IO) {
-                File(memoryDir, "$date.md").appendText("${message.sender}: ${message.text}\n")
+            fileMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    File(memoryDir, "$date.md").appendText("${message.sender}: ${message.text}\n")
+                }
             }
         }
     }
@@ -150,9 +153,11 @@ class SqliteMemoryStore(
         }
 
     override suspend fun saveFact(userId: String, fact: String) {
-        withContext(Dispatchers.IO) {
-            memoryDir.mkdirs()
-            memoryFile.appendText("- $fact\n")
+        fileMutex.withLock {
+            withContext(Dispatchers.IO) {
+                memoryDir.mkdirs()
+                memoryFile.appendText("- $fact\n")
+            }
         }
     }
 

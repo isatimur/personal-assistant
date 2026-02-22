@@ -28,7 +28,7 @@ fun main() {
     val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl))
 
     val tools = buildList {
-        add(FileSystemTool())
+        add(FileSystemTool(config.tools.filesystem.allowedPaths))
         add(ShellTool(config.tools.shell.timeoutSeconds, config.tools.shell.maxOutputChars))
         add(WebBrowserTool(config.tools.web.maxContentChars))
         if (config.tools.email.enabled) {
@@ -42,7 +42,7 @@ fun main() {
     val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit)
     val engine = AgentEngine(llm, memory, registry, assembler)
     val gateway = Gateway(engine)
-    val telegram = TelegramAdapter(config.telegram.token, gateway)
+    val telegram = TelegramAdapter(config.telegram.token, gateway, config.telegram.timeoutMs)
 
     println("Personal assistant starting... Send a message on Telegram!")
     telegram.start()

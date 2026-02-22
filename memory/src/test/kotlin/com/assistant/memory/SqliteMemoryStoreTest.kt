@@ -1,6 +1,8 @@
 package com.assistant.memory
 
 import com.assistant.domain.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
@@ -129,5 +131,34 @@ class SqliteMemoryStoreTest {
         val original = floatArrayOf(1.0f, -2.5f, 3.14f)
         val restored = original.toBytes().toFloatArray()
         assertArrayEquals(original, restored, 1e-6f)
+    }
+
+    // ── atomicity & concurrency ───────────────────────────────────────────────
+
+    @Test
+    fun `append is atomic - message and chunks present together`() = runTest {
+        val msg = Message("atomicUser", "Atomic append test message", Channel.TELEGRAM)
+        store.append("atomicSession", msg)
+        // Both the message row and its chunk must exist after a single append
+        val history = store.history("atomicSession", 1)
+        assertEquals(1, history.size)
+        val results = store.search("atomicUser", "Atomic append test", limit = 5)
+        assertTrue(results.isNotEmpty(), "Expected chunk to be searchable after append")
+    }
+
+    @Test
+    fun `concurrent saveFact calls produce correct file content`() = runTest {
+        val concurrentDir = Files.createTempDirectory("assistant-concurrent").toFile()
+        try {
+            val s = SqliteMemoryStore(":memory:", memoryDir = concurrentDir)
+            s.init()
+            val facts = (1..10).map { i -> "fact-$i" }
+            facts.map { f -> async { s.saveFact("u", f) } }.awaitAll()
+            val written = s.facts("u")
+            assertEquals(10, written.size, "All 10 facts should be written")
+            facts.forEach { f -> assertTrue(written.contains(f), "Missing: $f") }
+        } finally {
+            concurrentDir.deleteRecursively()
+        }
     }
 }
