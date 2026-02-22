@@ -1,0 +1,4 @@
+dependencies {
+    implementation(project(":core"))
+    implementation("io.github.kotlin-telegram-bot:telegram:6.1.0")
+}
