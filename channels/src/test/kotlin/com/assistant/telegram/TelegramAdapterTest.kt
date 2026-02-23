@@ -185,4 +185,91 @@ class TelegramAdapterTest {
         assertTrue(result)
         verify { gateway.clearSession("TELEGRAM:55") }
     }
+
+    // ── /memory ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `slash memory sends numbered list of facts`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        coEvery { memory.facts(any()) } returns listOf("User's name is Timur", "Prefers direct communication")
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+
+        val result = adapter.handleCommand(bot, 1L, "/memory")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("1. User's name is Timur") && it.contains("2. Prefers direct communication") }) }
+    }
+
+    @Test
+    fun `slash memory sends empty message when no facts`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        coEvery { memory.facts(any()) } returns emptyList()
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+
+        val result = adapter.handleCommand(bot, 1L, "/memory")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("don't know", ignoreCase = true) }) }
+    }
+
+    // ── /forget ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `slash forget 1 calls deleteFact with correct fact`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        coEvery { memory.facts(any()) } returns listOf("User's name is Timur", "Prefers direct communication")
+        coEvery { memory.deleteFact(any(), any()) } just Runs
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+
+        val result = adapter.handleCommand(bot, 1L, "/forget 1")
+
+        assertTrue(result)
+        coVerify { memory.deleteFact("1", "User's name is Timur") }
+        verify { bot.sendMessage(any(), match { it.contains("User's name is Timur") }) }
+    }
+
+    @Test
+    fun `slash forget with out-of-range index sends no fact message`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        coEvery { memory.facts(any()) } returns listOf("only fact")
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+
+        val result = adapter.handleCommand(bot, 1L, "/forget 99")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("No fact #99") }) }
+    }
+
+    // ── /remind ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `slash remind sends confirmation when reminder manager present`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        val reminderManager = mockk<com.assistant.reminder.ReminderManager>(relaxed = true)
+        every { reminderManager.schedule(any(), any(), any()) } returns "reminder-id"
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+        adapter.reminderManager = reminderManager
+
+        val result = adapter.handleCommand(bot, 1L, "/remind 10m buy milk")
+
+        assertTrue(result)
+        verify { reminderManager.schedule(1L, any(), "buy milk") }
+        verify { bot.sendMessage(any(), match { it.contains("10m") }) }
+    }
+
+    @Test
+    fun `slash remind sends usage when no reminder manager`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk(relaxed = true))
+
+        val result = adapter.handleCommand(bot, 1L, "/remind 10m buy milk")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("Usage", ignoreCase = true) }) }
+    }
 }

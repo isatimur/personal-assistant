@@ -20,6 +20,7 @@ class ContextAssembler(
             val bootstrap: String?,
             val identity: AgentIdentity?,
             val soul: String?,
+            val user: String?,
             val skills: List<SkillEntry>,
             val facts: List<String>,
             val history: List<Message>,
@@ -30,11 +31,12 @@ class ContextAssembler(
             val b  = async { workspace.loadBootstrap() }
             val i  = async { workspace.loadIdentity() }
             val s  = async { workspace.loadSoul() }
+            val u  = async { workspace.loadUser() }
             val sk = async { workspace.loadSkills() }
             val f  = async { memory.facts(session.userId) }
             val h  = async { memory.history(session.id, windowSize) }
             val r  = async { memory.search(session.userId, currentMessage.text, searchLimit) }
-            Ctx(b.await(), i.await(), s.await(), sk.await(), f.await(), h.await(), r.await())
+            Ctx(b.await(), i.await(), s.await(), u.await(), sk.await(), f.await(), h.await(), r.await())
         }
 
         val systemPrompt = buildString {
@@ -56,9 +58,15 @@ class ContextAssembler(
                 appendLine("You are a personal AI assistant running locally. Use tools to take real actions.")
                 appendLine()
             }
-            // 4. Available tools
+            // 4. User context
+            if (ctx.user != null) {
+                appendLine("## About you:")
+                appendLine(ctx.user)
+                appendLine()
+            }
+            // 5. Available tools
             appendLine("Available tools:\n${toolRegistry.describe()}")
-            // 5. Skills
+            // 6. Skills
             if (ctx.skills.isNotEmpty()) {
                 appendLine()
                 appendLine("## Skills")
@@ -68,18 +76,18 @@ class ContextAssembler(
                     appendLine(skill.body)
                 }
             }
-            // 6. ReAct format
+            // 7. ReAct format
             appendLine("\nTo use a tool, respond EXACTLY with:")
             appendLine("THOUGHT: <reasoning>")
             appendLine("ACTION: <command_name>")
             appendLine("ARGS: {\"key\": \"value\"}")
             appendLine("\nTo give a final answer: FINAL: <response>")
-            // 7. User facts
+            // 8. User facts
             if (ctx.facts.isNotEmpty()) {
                 appendLine("\nKnown facts about this user:")
                 ctx.facts.forEach { appendLine("- $it") }
             }
-            // 8. Relevant context
+            // 9. Relevant context
             if (ctx.relevant.isNotEmpty()) {
                 appendLine("\nRelevant past context:")
                 ctx.relevant.forEach { appendLine(it) }

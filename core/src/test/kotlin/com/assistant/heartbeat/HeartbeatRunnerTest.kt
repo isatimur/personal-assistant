@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.time.LocalDateTime
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -98,5 +101,53 @@ class HeartbeatRunnerTest {
             chatIdFile = File(tmpDir, "last-chat-id")
         )
         assertThrows(IllegalArgumentException::class.java) { runner.parseInterval("bad") }
+    }
+
+    @Test
+    fun `delayUntilTime returns correct delay for future time same day`() {
+        val runner = HeartbeatRunner(
+            config = HeartbeatConfig(),
+            gateway = mockk(),
+            send = {},
+            chatIdFile = File(tmpDir, "last-chat-id")
+        )
+        val now = LocalDateTime.of(2024, 1, 1, 8, 0, 0)
+        val delay = runner.delayUntilTime("08:30", now)
+        assertEquals(30.minutes, delay)
+    }
+
+    @Test
+    fun `delayUntilTime returns next-day delay when time already passed`() {
+        val runner = HeartbeatRunner(
+            config = HeartbeatConfig(),
+            gateway = mockk(),
+            send = {},
+            chatIdFile = File(tmpDir, "last-chat-id")
+        )
+        val now = LocalDateTime.of(2024, 1, 1, 9, 0, 0)
+        val delay = runner.delayUntilTime("08:30", now)
+        assertEquals(23.hours + 30.minutes, delay)
+    }
+
+    @Test
+    fun `time-based heartbeat fires at computed delay`() = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id").also { it.writeText("12345") }
+        coEvery { mockk<Gateway>().handle(any()) } returns "focus update"
+        val gateway = mockk<Gateway>()
+        coEvery { gateway.handle(any()) } returns "focus update"
+        val sent = mutableListOf<String>()
+
+        val runner = HeartbeatRunner(
+            config = HeartbeatConfig(enabled = true, time = "00:00"),
+            gateway = gateway,
+            send = { sent.add(it) },
+            chatIdFile = chatIdFile,
+            scope = this
+        )
+        runner.start()
+        // advance 25 hours — guarantees at least one time-based fire
+        advanceTimeBy(25.hours)
+        runner.stop()
+        assertTrue(sent.isNotEmpty(), "Expected at least one time-based heartbeat message")
     }
 }

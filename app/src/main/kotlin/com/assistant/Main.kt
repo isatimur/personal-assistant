@@ -9,6 +9,7 @@ import com.assistant.llm.LangChain4jEmbeddingProvider
 import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
+import com.assistant.reminder.ReminderManager
 import com.assistant.telegram.TelegramAdapter
 import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
@@ -49,8 +50,15 @@ fun main() {
 
     val telegram = TelegramAdapter(config.telegram.token, gateway, memory, config.telegram.timeoutMs)
 
+    val reminderManager = ReminderManager(
+        persistFile = File(workspace.workspaceDir, "reminders.json"),
+        send = { chatId, text -> telegram.sendProactive(chatId, text) }
+    )
+    telegram.reminderManager = reminderManager
+    reminderManager.loadAndReschedule()
+
     val heartbeat = HeartbeatRunner(
-        config = HeartbeatConfig(config.heartbeat.enabled, config.heartbeat.every, config.heartbeat.prompt),
+        config = HeartbeatConfig(config.heartbeat.enabled, config.heartbeat.every, config.heartbeat.time, config.heartbeat.prompt),
         gateway = gateway,
         send = { text -> workspace.lastChatId()?.let { chatId -> telegram.sendProactive(chatId, text) } },
         chatIdFile = File(workspace.workspaceDir, "last-chat-id")
