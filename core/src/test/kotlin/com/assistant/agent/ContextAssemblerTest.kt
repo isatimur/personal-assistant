@@ -154,4 +154,43 @@ class ContextAssemblerTest {
         val idxUser = system.indexOf("About you:")
         assertTrue(idxSoul < idxUser, "Soul should appear before user context")
     }
+
+    @Test
+    fun `matched agent profile appears in system prompt`(@TempDir tmpDir: File) = runTest {
+        emptyMemory()
+        every { registry.describe() } returns ""
+        val agentsDir = File(tmpDir, "agents").also { it.mkdirs() }
+        File(agentsDir, "researcher.md").writeText(
+            "---\nname: Researcher\ndescription: Deep research\ntriggers: research, look up\nenabled: true\n---\nYou are an expert researcher."
+        )
+
+        val workspace = WorkspaceLoader(tmpDir)
+        val assembler = ContextAssembler(memory, registry, 10, workspace = workspace)
+        val system = assembler.build(
+            Session("s1", "user1", Channel.TELEGRAM),
+            Message("user1", "research Kotlin coroutines", Channel.TELEGRAM)
+        ).first().content
+
+        assertTrue(system.contains("Active Agent: Researcher"), "Active agent header should appear")
+        assertTrue(system.contains("You are an expert researcher."), "Agent extension should appear")
+    }
+
+    @Test
+    fun `no agent profile injected when no trigger matches`(@TempDir tmpDir: File) = runTest {
+        emptyMemory()
+        every { registry.describe() } returns ""
+        val agentsDir = File(tmpDir, "agents").also { it.mkdirs() }
+        File(agentsDir, "researcher.md").writeText(
+            "---\nname: Researcher\ntriggers: research\nenabled: true\n---\nResearcher extension."
+        )
+
+        val workspace = WorkspaceLoader(tmpDir)
+        val assembler = ContextAssembler(memory, registry, 10, workspace = workspace)
+        val system = assembler.build(
+            Session("s1", "user1", Channel.TELEGRAM),
+            Message("user1", "hello world", Channel.TELEGRAM)
+        ).first().content
+
+        assertFalse(system.contains("Active Agent:"), "No profile should be injected for non-matching message")
+    }
 }
