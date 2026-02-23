@@ -38,6 +38,18 @@ class GatewayTest {
     }
 
     @Test
+    fun `clearSession removes session so next handle creates a fresh one`() = runTest {
+        val sessions = mutableListOf<Session>()
+        coEvery { engine.process(capture(sessions), any()) } returns "ok"
+        val gateway = Gateway(engine)
+        gateway.handle(Message("user1", "hello", Channel.TELEGRAM))
+        gateway.clearSession("TELEGRAM:user1")
+        gateway.handle(Message("user1", "hello again", Channel.TELEGRAM))
+        assertEquals(2, sessions.size)
+        assertNotSame(sessions[0], sessions[1])
+    }
+
+    @Test
     fun `idle session is evicted after TTL and recreated on next message`() = runTest {
         val sessions = mutableListOf<Session>()
         coEvery { engine.process(capture(sessions), any()) } returns "ok"

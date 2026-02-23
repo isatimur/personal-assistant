@@ -14,6 +14,11 @@ class Gateway(private val engine: AgentEngine, private val sessionTtlMs: Long = 
         lastActive.entries.removeIf { it.value < cutoff }
     }
 
+    fun clearSession(sessionKey: String) {
+        sessions.remove(sessionKey)
+        lastActive.remove(sessionKey)
+    }
+
     suspend fun handle(message: Message): String {
         evictExpired()
         val key = "${message.channel}:${message.sender}"

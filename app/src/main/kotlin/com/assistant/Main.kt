@@ -47,7 +47,7 @@ fun main() {
     val engine = AgentEngine(llm, memory, registry, assembler)
     val gateway = Gateway(engine)
 
-    val telegram = TelegramAdapter(config.telegram.token, gateway, config.telegram.timeoutMs)
+    val telegram = TelegramAdapter(config.telegram.token, gateway, memory, config.telegram.timeoutMs)
 
     val heartbeat = HeartbeatRunner(
         config = HeartbeatConfig(config.heartbeat.enabled, config.heartbeat.every, config.heartbeat.prompt),

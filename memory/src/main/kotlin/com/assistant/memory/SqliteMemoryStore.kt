@@ -161,6 +161,15 @@ class SqliteMemoryStore(
         }
     }
 
+    override suspend fun clearHistory(sessionId: String) {
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                Messages.deleteWhere { with(it) { Messages.sessionId eq sessionId } }
+                Chunks.deleteWhere { with(it) { Chunks.sessionId eq sessionId } }
+            }
+        }
+    }
+
     override suspend fun search(userId: String, query: String, limit: Int): List<String> {
         if (query.isBlank()) return emptyList()
 

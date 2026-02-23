@@ -133,6 +133,20 @@ class SqliteMemoryStoreTest {
         assertArrayEquals(original, restored, 1e-6f)
     }
 
+    // ── clearHistory ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `clearHistory deletes messages and chunks for sessionId only`() = runTest {
+        store.append("clearA", Message("userX", "first", Channel.TELEGRAM))
+        store.append("clearA", Message("userX", "second", Channel.TELEGRAM))
+        store.append("clearB", Message("userX", "keep this", Channel.TELEGRAM))
+
+        store.clearHistory("clearA")
+
+        assertEquals(emptyList<Message>(), store.history("clearA", 10))
+        assertEquals(1, store.history("clearB", 10).size)
+    }
+
     // ── atomicity & concurrency ───────────────────────────────────────────────
 
     @Test
