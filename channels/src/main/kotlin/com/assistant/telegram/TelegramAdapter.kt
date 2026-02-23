@@ -27,12 +27,14 @@ class TelegramAdapter(
     private val gateway: Gateway,
     private val memory: MemoryPort,
     private val timeoutMs: Long = 120_000L,
-    private val lastChatIdFile: File = File(System.getProperty("user.home"), ".assistant/last-chat-id")
+    private val lastChatIdFile: File = File(System.getProperty("user.home"), ".assistant/last-chat-id"),
+    private val workspaceDir: File = File(System.getProperty("user.home"), ".assistant")
 ) {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
     private val scope = CoroutineScope(Dispatchers.IO)
     private val semaphore = Semaphore(4)
     private var telegramBot: Bot? = null
+    private val onboarding = OnboardingManager(memory, workspaceDir)
 
     fun normalize(senderId: String, text: String): Message =
         Message(sender = senderId, text = text, channel = Channel.TELEGRAM)
@@ -52,7 +54,15 @@ class TelegramAdapter(
         if (!text.startsWith("/")) return false
         val sessionKey = "TELEGRAM:$chatId"
         when {
+            text == "/start" -> {
+                if (onboarding.needsOnboarding()) {
+                    onboarding.start(bot, chatId)
+                } else {
+                    bot.sendMessage(ChatId.fromId(chatId), "Welcome back! Send me a message.")
+                }
+            }
             text == "/new" || text == "/reset" -> {
+                onboarding.cancel(chatId)
                 gateway.clearSession(sessionKey)
                 memory.clearHistory(sessionKey)
                 bot.sendMessage(ChatId.fromId(chatId), "Session cleared. Starting fresh!")
@@ -60,7 +70,7 @@ class TelegramAdapter(
             text == "/help" -> {
                 bot.sendMessage(
                     ChatId.fromId(chatId),
-                    "/new or /reset — clear conversation history\n/help — show this message"
+                    "/start — set up your assistant\n/new or /reset — clear conversation history\n/help — show this message"
                 )
             }
             else -> {
@@ -79,7 +89,14 @@ class TelegramAdapter(
                     val text = message.text ?: return@message
                     scope.launch {
                         writeChatId(chatId)
+                        // 1. Active wizard step (non-command messages only)
+                        if (!text.startsWith("/") && onboarding.isActive(chatId)) {
+                            onboarding.handle(bot, chatId, text)
+                            return@launch
+                        }
+                        // 2. Commands
                         if (handleCommand(bot, chatId, text)) return@launch
+                        // 3. Regular LLM message
                         val normalizedMsg = normalize(chatId.toString(), text)
                         val typingJob = launch {
                             while (isActive) {

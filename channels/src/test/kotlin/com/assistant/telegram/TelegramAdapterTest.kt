@@ -117,4 +117,72 @@ class TelegramAdapterTest {
         val result = adapter.handleCommand(bot, 1L, "hello world")
         assertFalse(result)
     }
+
+    // ── /start onboarding integration ─────────────────────────────────────────
+
+    @Test
+    fun `slash start triggers onboarding when Soul_md is absent`(@TempDir tmpDir: File) = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id")
+        val workspaceDir = File(tmpDir, "workspace")
+        workspaceDir.mkdirs()
+        // Soul.md intentionally absent → needsOnboarding = true
+        val bot = mockk<Bot>(relaxed = true)
+        val adapter = TelegramAdapter(
+            token = "fake",
+            gateway = mockk(),
+            memory = mockk(relaxed = true),
+            lastChatIdFile = chatIdFile,
+            workspaceDir = workspaceDir
+        )
+        val result = adapter.handleCommand(bot, 77L, "/start")
+        assertTrue(result)
+        // should send an onboarding greeting (asking for name)
+        verify { bot.sendMessage(any(), match { it.contains("name", ignoreCase = true) }) }
+    }
+
+    @Test
+    fun `slash start sends welcome back when already configured`(@TempDir tmpDir: File) = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id")
+        val workspaceDir = File(tmpDir, "workspace")
+        workspaceDir.mkdirs()
+        File(workspaceDir, "IDENTITY.md").writeText("name: Aria\nvibe: direct")
+        File(workspaceDir, "Soul.md").writeText("You are Aria.")
+        val bot = mockk<Bot>(relaxed = true)
+        val adapter = TelegramAdapter(
+            token = "fake",
+            gateway = mockk(),
+            memory = mockk(relaxed = true),
+            lastChatIdFile = chatIdFile,
+            workspaceDir = workspaceDir
+        )
+        val result = adapter.handleCommand(bot, 77L, "/start")
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("Welcome back", ignoreCase = true) }) }
+    }
+
+    @Test
+    fun `slash new during onboarding cancels the wizard`(@TempDir tmpDir: File) = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id")
+        val workspaceDir = File(tmpDir, "workspace")
+        workspaceDir.mkdirs()
+        val bot = mockk<Bot>(relaxed = true)
+        val gateway = mockk<Gateway>()
+        val memory = mockk<MemoryPort>(relaxed = true)
+        every { gateway.clearSession(any()) } just Runs
+        coEvery { memory.clearHistory(any()) } just Runs
+
+        val adapter = TelegramAdapter(
+            token = "fake",
+            gateway = gateway,
+            memory = memory,
+            lastChatIdFile = chatIdFile,
+            workspaceDir = workspaceDir
+        )
+        // Start onboarding
+        adapter.handleCommand(bot, 55L, "/start")
+        // Then /new should cancel wizard
+        val result = adapter.handleCommand(bot, 55L, "/new")
+        assertTrue(result)
+        verify { gateway.clearSession("TELEGRAM:55") }
+    }
 }
