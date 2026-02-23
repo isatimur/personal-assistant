@@ -86,7 +86,7 @@ internal class OnboardingManager(
     ) {
         workspaceDir.mkdirs()
         File(workspaceDir, "IDENTITY.md").writeText(
-            "name: $botName\nemoji: 🤖\nvibe: $vibe\n"
+            "---\nname: $botName\nemoji: 🤖\nvibe: $vibe\n---\n"
         )
         File(workspaceDir, "Soul.md").writeText(soul)
         File(workspaceDir, "USER.md").writeText(
