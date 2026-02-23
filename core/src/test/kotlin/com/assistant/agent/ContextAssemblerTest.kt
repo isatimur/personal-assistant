@@ -133,4 +133,25 @@ class ContextAssemblerTest {
         val idxSoul = system.indexOf("Soul content here")
         assertTrue(idxBootstrap < idxSoul, "Bootstrap should appear before Soul in system prompt")
     }
+
+    @Test
+    fun `USER_md content appears in system prompt after soul`(@TempDir tmpDir: File) = runTest {
+        emptyMemory()
+        every { registry.describe() } returns ""
+        File(tmpDir, "Soul.md").writeText("Soul content here")
+        File(tmpDir, "USER.md").writeText("name: Timur\ntimezone: Europe/Bratislava")
+
+        val workspace = WorkspaceLoader(tmpDir)
+        val assembler = ContextAssembler(memory, registry, 10, workspace = workspace)
+        val system = assembler.build(
+            Session("s1", "user1", Channel.TELEGRAM),
+            Message("user1", "hi", Channel.TELEGRAM)
+        ).first().content
+
+        assertTrue(system.contains("About you:"), "System prompt should contain 'About you:' section")
+        assertTrue(system.contains("name: Timur"), "System prompt should contain user data")
+        val idxSoul = system.indexOf("Soul content here")
+        val idxUser = system.indexOf("About you:")
+        assertTrue(idxSoul < idxUser, "Soul should appear before user context")
+    }
 }

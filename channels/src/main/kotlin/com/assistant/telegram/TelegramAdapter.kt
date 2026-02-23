@@ -3,6 +3,8 @@ package com.assistant.telegram
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
 import com.assistant.ports.MemoryPort
+import com.assistant.reminder.ReminderManager
+import com.assistant.reminder.parseReminderDuration
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
@@ -35,6 +37,7 @@ class TelegramAdapter(
     private val semaphore = Semaphore(4)
     private var telegramBot: Bot? = null
     private val onboarding = OnboardingManager(memory, workspaceDir)
+    var reminderManager: ReminderManager? = null
 
     fun normalize(senderId: String, text: String): Message =
         Message(sender = senderId, text = text, channel = Channel.TELEGRAM)
@@ -67,10 +70,54 @@ class TelegramAdapter(
                 memory.clearHistory(sessionKey)
                 bot.sendMessage(ChatId.fromId(chatId), "Session cleared. Starting fresh!")
             }
+            text == "/memory" -> {
+                val facts = memory.facts(chatId.toString())
+                if (facts.isEmpty()) {
+                    bot.sendMessage(ChatId.fromId(chatId), "I don't know anything about you yet.")
+                } else {
+                    val list = facts.mapIndexed { i, f -> "${i + 1}. $f" }.joinToString("\n")
+                    bot.sendMessage(ChatId.fromId(chatId), "What I know about you:\n$list")
+                }
+            }
+            text.startsWith("/forget ") -> {
+                val idx = text.removePrefix("/forget ").trim().toIntOrNull()
+                if (idx == null) {
+                    bot.sendMessage(ChatId.fromId(chatId), "Usage: /forget <number>")
+                } else {
+                    val facts = memory.facts(chatId.toString())
+                    val fact = facts.getOrNull(idx - 1)
+                    if (fact == null) {
+                        bot.sendMessage(ChatId.fromId(chatId), "No fact #$idx.")
+                    } else {
+                        memory.deleteFact(chatId.toString(), fact)
+                        bot.sendMessage(ChatId.fromId(chatId), "Forgotten: \"$fact\"")
+                    }
+                }
+            }
+            text.startsWith("/remind ") -> {
+                val rm = reminderManager
+                val parts = text.removePrefix("/remind ").trim().split(" ", limit = 2)
+                if (parts.size < 2 || rm == null) {
+                    bot.sendMessage(ChatId.fromId(chatId), "Usage: /remind <duration> <text>  e.g. /remind 30m call Artur")
+                } else {
+                    try {
+                        val duration = parseReminderDuration(parts[0])
+                        rm.schedule(chatId, duration, parts[1])
+                        bot.sendMessage(ChatId.fromId(chatId), "Got it. I'll remind you in ${parts[0]}.")
+                    } catch (e: IllegalArgumentException) {
+                        bot.sendMessage(ChatId.fromId(chatId), "Invalid duration: ${parts[0]}. Use e.g. 30m, 1h, 2d.")
+                    }
+                }
+            }
             text == "/help" -> {
                 bot.sendMessage(
                     ChatId.fromId(chatId),
-                    "/start — set up your assistant\n/new or /reset — clear conversation history\n/help — show this message"
+                    "/start — set up your assistant\n" +
+                    "/new or /reset — clear conversation history\n" +
+                    "/memory — show what I know about you\n" +
+                    "/forget <n> — remove fact #n from my memory\n" +
+                    "/remind <duration> <text> — set a reminder (e.g. /remind 30m call Artur)\n" +
+                    "/help — show this message"
                 )
             }
             else -> {
@@ -84,7 +131,7 @@ class TelegramAdapter(
         telegramBot = bot {
             this.token = this@TelegramAdapter.token
             dispatch {
-                message(Filter.Text) {
+                message(Filter.Text or Filter.Command) {
                     val chatId = message.chat.id
                     val text = message.text ?: return@message
                     scope.launch {

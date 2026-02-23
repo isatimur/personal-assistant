@@ -77,6 +77,9 @@ internal class OnboardingManager(
             "name: $botName\nemoji: 🤖\nvibe: $vibe\n"
         )
         File(workspaceDir, "Soul.md").writeText(soul)
+        File(workspaceDir, "USER.md").writeText(
+            "name: $userName\ntimezone: (unknown — ask me to update this)\n"
+        )
         memory.saveFact(chatId.toString(), "User's name is $userName")
         steps.remove(chatId)
         bot.sendMessage(ChatId.fromId(chatId), "✅ All set! I'm $botName 🤖. Nice to meet you, $userName!")
