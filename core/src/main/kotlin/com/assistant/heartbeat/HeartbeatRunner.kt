@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.logging.Logger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
@@ -18,10 +19,19 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
+data class HeartbeatAgent(
+    val name: String,
+    val cron: String,
+    val prompt: String,
+    val timezone: String = ZoneId.systemDefault().id
+)
+
 data class HeartbeatConfig(
     val enabled: Boolean = false,
     val every: String = "1h",
     val time: String? = null,
+    val cron: String? = null,
+    val agents: List<HeartbeatAgent> = emptyList(),
     val prompt: String = "Check if there's anything proactive you should do."
 )
 
@@ -33,34 +43,55 @@ class HeartbeatRunner(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
     private val logger = Logger.getLogger(HeartbeatRunner::class.java.name)
-    private var job: Job? = null
+    private val jobs: MutableList<Job> = mutableListOf()
 
     fun start() {
         if (!config.enabled) return
-        if (config.time != null) {
-            job = scope.launch {
+        if (config.agents.isNotEmpty()) {
+            // Multi-agent mode: launch one coroutine per agent
+            config.agents.forEach { agent ->
+                val tz = runCatching { ZoneId.of(agent.timezone) }.getOrDefault(ZoneId.systemDefault())
+                jobs += scope.launch {
+                    while (true) {
+                        val waitDuration = CronScheduler.nextCronDelay(agent.cron, tz)
+                        delay(waitDuration)
+                        fireHeartbeat(agent.prompt)
+                    }
+                }
+            }
+        } else if (config.cron != null) {
+            jobs += scope.launch {
+                while (true) {
+                    val waitDuration = CronScheduler.nextCronDelay(config.cron)
+                    delay(waitDuration)
+                    fireHeartbeat(config.prompt)
+                }
+            }
+        } else if (config.time != null) {
+            jobs += scope.launch {
                 while (true) {
                     val waitDuration = delayUntilTime(config.time)
                     delay(waitDuration)
-                    fireHeartbeat()
+                    fireHeartbeat(config.prompt)
                 }
             }
         } else {
             val interval = parseInterval(config.every)
-            job = scope.launch {
+            jobs += scope.launch {
                 while (true) {
                     delay(interval)
-                    fireHeartbeat()
+                    fireHeartbeat(config.prompt)
                 }
             }
         }
     }
 
     fun stop() {
-        job?.cancel()
+        jobs.forEach { it.cancel() }
+        jobs.clear()
     }
 
-    private suspend fun fireHeartbeat() {
+    internal suspend fun fireHeartbeat(prompt: String = config.prompt) {
         if (!chatIdFile.exists()) {
             logger.info("Heartbeat: chatIdFile absent, skipping tick")
             return
@@ -68,7 +99,7 @@ class HeartbeatRunner(
         try {
             val syntheticMsg = Message(
                 sender = "heartbeat",
-                text = config.prompt,
+                text = prompt,
                 channel = Channel.TELEGRAM
             )
             val reply = gateway.handle(syntheticMsg)

@@ -150,4 +150,73 @@ class HeartbeatRunnerTest {
         runner.stop()
         assertTrue(sent.isNotEmpty(), "Expected at least one time-based heartbeat message")
     }
+
+    @Test
+    fun `cron path fires after delay`() = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id").also { it.writeText("12345") }
+        val gateway = mockk<Gateway>()
+        coEvery { gateway.handle(any()) } returns "cron update"
+        val sent = mutableListOf<String>()
+
+        val runner = HeartbeatRunner(
+            config = HeartbeatConfig(enabled = true, cron = "* * * * *", prompt = "cron check"),
+            gateway = gateway,
+            send = { sent.add(it) },
+            chatIdFile = chatIdFile,
+            scope = this
+        )
+        runner.start()
+        // every-minute cron: delay is at most 60s; advance 65s to guarantee one fire
+        advanceTimeBy(65.seconds)
+        runner.stop()
+        assertTrue(sent.isNotEmpty(), "Expected at least one cron heartbeat message")
+    }
+
+    @Test
+    fun `multi-agent launches separate coroutines and stop cancels all`() = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id").also { it.writeText("12345") }
+        val gateway = mockk<Gateway>()
+        coEvery { gateway.handle(any()) } returns "agent reply"
+        val prompts = mutableListOf<String>()
+
+        val runner = HeartbeatRunner(
+            config = HeartbeatConfig(
+                enabled = true,
+                agents = listOf(
+                    HeartbeatAgent("agent1", "* * * * *", "prompt1"),
+                    HeartbeatAgent("agent2", "* * * * *", "prompt2")
+                )
+            ),
+            gateway = gateway,
+            send = { prompts.add(it) },
+            chatIdFile = chatIdFile,
+            scope = this
+        )
+        runner.start()
+        advanceTimeBy(65.seconds)
+        runner.stop()
+        assertTrue(prompts.isNotEmpty(), "Expected messages from multi-agent heartbeat")
+    }
+
+    @Test
+    fun `stop cancels all jobs`() = runTest {
+        val chatIdFile = File(tmpDir, "last-chat-id").also { it.writeText("12345") }
+        val gateway = mockk<Gateway>()
+        coEvery { gateway.handle(any()) } returns "reply"
+        val sent = mutableListOf<String>()
+
+        val runner = HeartbeatRunner(
+            config = HeartbeatConfig(enabled = true, every = "1s"),
+            gateway = gateway,
+            send = { sent.add(it) },
+            chatIdFile = chatIdFile,
+            scope = this
+        )
+        runner.start()
+        advanceTimeBy(2.seconds)
+        runner.stop()
+        val countAfterStop = sent.size
+        advanceTimeBy(5.seconds)
+        assertEquals(countAfterStop, sent.size, "No more messages should be sent after stop()")
+    }
 }

@@ -120,4 +120,61 @@ class WorkspaceLoaderTest {
         File(tmpDir, "last-chat-id").writeText("987654321")
         assertEquals(987654321L, WorkspaceLoader(tmpDir).lastChatId())
     }
+
+    // ── setUserField ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `setUserField updates existing key`() = runTest {
+        val userFile = File(tmpDir, "USER.md").also { it.writeText("name: Timur\ntimezone: Europe/Bratislava\n") }
+        WorkspaceLoader(tmpDir).setUserField("timezone", "Europe/London")
+        val lines = userFile.readText().lines().filter { it.isNotBlank() }
+        assertTrue(lines.any { it == "timezone: Europe/London" })
+        assertFalse(lines.any { it.contains("Bratislava") })
+    }
+
+    @Test
+    fun `setUserField appends new key`() = runTest {
+        val userFile = File(tmpDir, "USER.md").also { it.writeText("name: Timur\n") }
+        WorkspaceLoader(tmpDir).setUserField("goals", "ship product")
+        val text = userFile.readText()
+        assertTrue(text.contains("goals: ship product"))
+    }
+
+    @Test
+    fun `setUserField creates USER_md when absent`() = runTest {
+        val userFile = File(tmpDir, "USER.md")
+        assertFalse(userFile.exists())
+        WorkspaceLoader(tmpDir).setUserField("name", "Alice")
+        assertTrue(userFile.exists())
+        assertTrue(userFile.readText().contains("name: Alice"))
+    }
+
+    // ── loadAgentProfiles ─────────────────────────────────────────────────────
+
+    @Test
+    fun `empty agents dir returns empty list`() = runTest {
+        assertTrue(WorkspaceLoader(tmpDir).loadAgentProfiles().isEmpty())
+    }
+
+    @Test
+    fun `parses agent profile with triggers`() = runTest {
+        val agentsDir = File(tmpDir, "agents").also { it.mkdirs() }
+        File(agentsDir, "researcher.md").writeText(
+            "---\nname: Researcher\ndescription: Deep research\ntriggers: research, look up, who is\nenabled: true\n---\nYou are a researcher."
+        )
+        val profiles = WorkspaceLoader(tmpDir).loadAgentProfiles()
+        assertEquals(1, profiles.size)
+        assertEquals("Researcher", profiles[0].name)
+        assertEquals(listOf("research", "look up", "who is"), profiles[0].triggers)
+        assertEquals("You are a researcher.", profiles[0].systemPromptExtension)
+    }
+
+    @Test
+    fun `disabled agent profile is excluded`() = runTest {
+        val agentsDir = File(tmpDir, "agents").also { it.mkdirs() }
+        File(agentsDir, "disabled.md").writeText(
+            "---\nname: Disabled\ntriggers: foo\nenabled: false\n---\nDisabled profile."
+        )
+        assertTrue(WorkspaceLoader(tmpDir).loadAgentProfiles().isEmpty())
+    }
 }

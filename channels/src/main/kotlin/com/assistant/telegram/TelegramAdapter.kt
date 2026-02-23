@@ -5,6 +5,7 @@ import com.assistant.gateway.Gateway
 import com.assistant.ports.MemoryPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.reminder.parseReminderDuration
+import com.assistant.workspace.WorkspaceLoader
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
@@ -37,6 +38,7 @@ class TelegramAdapter(
     private val semaphore = Semaphore(4)
     private var telegramBot: Bot? = null
     private val onboarding = OnboardingManager(memory, workspaceDir)
+    private val workspaceLoader = WorkspaceLoader(workspaceDir)
     var reminderManager: ReminderManager? = null
 
     fun normalize(senderId: String, text: String): Message =
@@ -109,6 +111,26 @@ class TelegramAdapter(
                     }
                 }
             }
+            text == "/user" -> {
+                val content = workspaceLoader.loadUser()
+                if (content == null) {
+                    bot.sendMessage(ChatId.fromId(chatId), "No USER.md yet. Complete /start to create one.")
+                } else {
+                    bot.sendMessage(ChatId.fromId(chatId), content)
+                }
+            }
+            text.startsWith("/user set ") -> {
+                val rest = text.removePrefix("/user set ").trim()
+                val spaceIdx = rest.indexOf(' ')
+                if (spaceIdx < 0) {
+                    bot.sendMessage(ChatId.fromId(chatId), "Usage: /user set <key> <value>")
+                } else {
+                    val key = rest.substring(0, spaceIdx).trim()
+                    val value = rest.substring(spaceIdx + 1).trim()
+                    workspaceLoader.setUserField(key, value)
+                    bot.sendMessage(ChatId.fromId(chatId), "Updated $key \u2192 $value")
+                }
+            }
             text == "/help" -> {
                 bot.sendMessage(
                     ChatId.fromId(chatId),
@@ -117,6 +139,8 @@ class TelegramAdapter(
                     "/memory — show what I know about you\n" +
                     "/forget <n> — remove fact #n from my memory\n" +
                     "/remind <duration> <text> — set a reminder (e.g. /remind 30m call Artur)\n" +
+                    "/user — show your USER.md profile\n" +
+                    "/user set <key> <value> — update a field in your profile\n" +
                     "/help — show this message"
                 )
             }
