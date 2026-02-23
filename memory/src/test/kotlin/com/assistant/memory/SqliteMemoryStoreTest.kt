@@ -147,6 +147,45 @@ class SqliteMemoryStoreTest {
         assertEquals(1, store.history("clearB", 10).size)
     }
 
+    // ── deleteFact ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `deleteFact removes only the targeted fact`() = runTest {
+        val deleteDir = Files.createTempDirectory("assistant-delete").toFile()
+        try {
+            val s = SqliteMemoryStore(":memory:", memoryDir = deleteDir)
+            s.init()
+            s.saveFact("u", "fact one")
+            s.saveFact("u", "fact two")
+            s.saveFact("u", "fact three")
+
+            s.deleteFact("u", "fact two")
+
+            val remaining = s.facts("u")
+            assertEquals(2, remaining.size)
+            assertTrue(remaining.contains("fact one"))
+            assertFalse(remaining.contains("fact two"))
+            assertTrue(remaining.contains("fact three"))
+        } finally {
+            deleteDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `deleteFact is no-op when fact absent`() = runTest {
+        val deleteDir2 = Files.createTempDirectory("assistant-delete2").toFile()
+        try {
+            val s = SqliteMemoryStore(":memory:", memoryDir = deleteDir2)
+            s.init()
+            s.saveFact("u", "only fact")
+            s.deleteFact("u", "nonexistent fact")
+            val remaining = s.facts("u")
+            assertEquals(1, remaining.size)
+        } finally {
+            deleteDir2.deleteRecursively()
+        }
+    }
+
     // ── atomicity & concurrency ───────────────────────────────────────────────
 
     @Test

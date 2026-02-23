@@ -23,6 +23,7 @@ interface MemoryPort {
     suspend fun history(sessionId: String, limit: Int): List<Message>
     suspend fun facts(userId: String): List<String>
     suspend fun saveFact(userId: String, fact: String)
+    suspend fun deleteFact(userId: String, fact: String)
     suspend fun search(userId: String, query: String, limit: Int = 5): List<String>
     suspend fun clearHistory(sessionId: String)
 }

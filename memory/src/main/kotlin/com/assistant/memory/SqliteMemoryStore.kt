@@ -161,6 +161,17 @@ class SqliteMemoryStore(
         }
     }
 
+    override suspend fun deleteFact(userId: String, fact: String) {
+        fileMutex.withLock {
+            withContext(Dispatchers.IO) {
+                if (!memoryFile.exists()) return@withContext
+                val lines = memoryFile.readLines()
+                val updated = lines.filter { line -> line.trimStart('-', ' ') != fact }
+                memoryFile.writeText(updated.joinToString("\n") + if (updated.isNotEmpty()) "\n" else "")
+            }
+        }
+    }
+
     override suspend fun clearHistory(sessionId: String) {
         withContext(Dispatchers.IO) {
             transaction(db) {

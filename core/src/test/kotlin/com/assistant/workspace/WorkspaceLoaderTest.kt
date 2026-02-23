@@ -98,6 +98,19 @@ class WorkspaceLoaderTest {
     }
 
     @Test
+    fun `loadUser returns null when USER_md absent`() = runTest {
+        assertNull(WorkspaceLoader(tmpDir).loadUser())
+    }
+
+    @Test
+    fun `loadUser returns trimmed content when USER_md present`() = runTest {
+        File(tmpDir, "USER.md").writeText("name: Timur\ntimezone: Europe/Bratislava\n")
+        val result = WorkspaceLoader(tmpDir).loadUser()
+        assertNotNull(result)
+        assertEquals("name: Timur\ntimezone: Europe/Bratislava", result)
+    }
+
+    @Test
     fun `lastChatId returns null when file absent`() {
         assertNull(WorkspaceLoader(tmpDir).lastChatId())
     }

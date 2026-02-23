@@ -4,7 +4,7 @@ telegram:
 
 llm:
   provider: openai       # openai | anthropic | ollama
-  model: gpt-4o-mini
+  model: gpt-5-nano-2025-08-07
   api-key: "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"
   base-url: null
 
@@ -44,4 +44,5 @@ tools:
 heartbeat:
   enabled: true
   every: "1h"
-  prompt: "Check if there's anything proactive you should do."
+  time: null
+  prompt: "Briefly check in: what are my top 3 priorities right now, what's my first 15-minute action, and one question to keep me on track."

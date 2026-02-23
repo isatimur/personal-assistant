@@ -71,6 +71,11 @@ class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.hom
         }
     }
 
+    suspend fun loadUser(): String? = withContext(Dispatchers.IO) {
+        val file = File(workspaceDir, "USER.md")
+        if (file.exists()) file.readText().trim() else null
+    }
+
     fun lastChatId(): Long? {
         val file = File(workspaceDir, "last-chat-id")
         return if (file.exists()) file.readText().trim().toLongOrNull() else null
