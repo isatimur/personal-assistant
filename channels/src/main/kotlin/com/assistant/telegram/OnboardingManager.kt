@@ -8,9 +8,11 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal sealed class OnboardingStep {
     object AskUserName : OnboardingStep()
-    data class AskBotName(val userName: String) : OnboardingStep()
-    data class AskVibe(val userName: String, val botName: String) : OnboardingStep()
-    data class AskSoul(val userName: String, val botName: String, val vibe: String) : OnboardingStep()
+    data class AskTimezone(val userName: String) : OnboardingStep()
+    data class AskGoals(val userName: String, val timezone: String) : OnboardingStep()
+    data class AskBotName(val userName: String, val timezone: String, val goals: String) : OnboardingStep()
+    data class AskVibe(val userName: String, val timezone: String, val goals: String, val botName: String) : OnboardingStep()
+    data class AskSoul(val userName: String, val timezone: String, val goals: String, val botName: String, val vibe: String) : OnboardingStep()
 }
 
 internal class OnboardingManager(
@@ -46,19 +48,27 @@ internal class OnboardingManager(
         val step = steps[chatId] ?: return false
         when (step) {
             is OnboardingStep.AskUserName -> {
-                steps[chatId] = OnboardingStep.AskBotName(userName = text.trim())
-                bot.sendMessage(ChatId.fromId(chatId), "Nice to meet you, ${text.trim()}! What should I call your assistant?")
+                steps[chatId] = OnboardingStep.AskTimezone(userName = text.trim())
+                bot.sendMessage(ChatId.fromId(chatId), "Nice to meet you, ${text.trim()}! What's your timezone? (e.g. Europe/London, America/New_York)")
+            }
+            is OnboardingStep.AskTimezone -> {
+                steps[chatId] = OnboardingStep.AskGoals(userName = step.userName, timezone = text.trim())
+                bot.sendMessage(ChatId.fromId(chatId), "What are your main goals or focus areas? (e.g. ship product, learn Kotlin, stay healthy)")
+            }
+            is OnboardingStep.AskGoals -> {
+                steps[chatId] = OnboardingStep.AskBotName(userName = step.userName, timezone = step.timezone, goals = text.trim())
+                bot.sendMessage(ChatId.fromId(chatId), "What should I call your assistant?")
             }
             is OnboardingStep.AskBotName -> {
-                steps[chatId] = OnboardingStep.AskVibe(userName = step.userName, botName = text.trim())
+                steps[chatId] = OnboardingStep.AskVibe(userName = step.userName, timezone = step.timezone, goals = step.goals, botName = text.trim())
                 bot.sendMessage(ChatId.fromId(chatId), "How should ${text.trim()} communicate? Describe the vibe (e.g. \"direct, a bit dry\").")
             }
             is OnboardingStep.AskVibe -> {
-                steps[chatId] = OnboardingStep.AskSoul(userName = step.userName, botName = step.botName, vibe = text.trim())
+                steps[chatId] = OnboardingStep.AskSoul(userName = step.userName, timezone = step.timezone, goals = step.goals, botName = step.botName, vibe = text.trim())
                 bot.sendMessage(ChatId.fromId(chatId), "Describe ${step.botName}'s soul in a few sentences — who are they at their core?")
             }
             is OnboardingStep.AskSoul -> {
-                complete(bot, chatId, step.userName, step.botName, step.vibe, text.trim())
+                complete(bot, chatId, step.userName, step.timezone, step.goals, step.botName, step.vibe, text.trim())
             }
         }
         return true
@@ -68,6 +78,8 @@ internal class OnboardingManager(
         bot: Bot,
         chatId: Long,
         userName: String,
+        timezone: String,
+        goals: String,
         botName: String,
         vibe: String,
         soul: String
@@ -78,9 +90,10 @@ internal class OnboardingManager(
         )
         File(workspaceDir, "Soul.md").writeText(soul)
         File(workspaceDir, "USER.md").writeText(
-            "name: $userName\ntimezone: (unknown — ask me to update this)\n"
+            "name: $userName\ntimezone: $timezone\ngoals: $goals\n"
         )
         memory.saveFact(chatId.toString(), "User's name is $userName")
+        memory.saveFact(chatId.toString(), "User's timezone is $timezone")
         steps.remove(chatId)
         bot.sendMessage(ChatId.fromId(chatId), "✅ All set! I'm $botName 🤖. Nice to meet you, $userName!")
     }

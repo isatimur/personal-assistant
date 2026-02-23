@@ -2,6 +2,7 @@ package com.assistant
 
 import com.assistant.agent.*
 import com.assistant.gateway.Gateway
+import com.assistant.heartbeat.HeartbeatAgent
 import com.assistant.heartbeat.HeartbeatConfig
 import com.assistant.heartbeat.HeartbeatRunner
 import com.assistant.llm.EmbeddingConfig
@@ -20,7 +21,7 @@ import com.assistant.workspace.WorkspaceLoader
 import java.io.File
 
 fun main() {
-    val config = loadConfig()
+    val config = loadConfig(secretsPath = "config/secrets.yml")
 
     val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
     File(dbPath).parentFile.mkdirs()
@@ -58,7 +59,16 @@ fun main() {
     reminderManager.loadAndReschedule()
 
     val heartbeat = HeartbeatRunner(
-        config = HeartbeatConfig(config.heartbeat.enabled, config.heartbeat.every, config.heartbeat.time, config.heartbeat.prompt),
+        config = HeartbeatConfig(
+            enabled = config.heartbeat.enabled,
+            every = config.heartbeat.every,
+            time = config.heartbeat.time,
+            cron = config.heartbeat.cron,
+            agents = config.heartbeat.agents.map { a ->
+                HeartbeatAgent(name = a.name, cron = a.cron, prompt = a.prompt, timezone = a.timezone)
+            },
+            prompt = config.heartbeat.prompt
+        ),
         gateway = gateway,
         send = { text -> workspace.lastChatId()?.let { chatId -> telegram.sendProactive(chatId, text) } },
         chatIdFile = File(workspace.workspaceDir, "last-chat-id")

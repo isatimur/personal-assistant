@@ -1,5 +1,6 @@
 package com.assistant.workspace
 
+import com.assistant.agent.AgentProfile
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -74,6 +75,43 @@ class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.hom
     suspend fun loadUser(): String? = withContext(Dispatchers.IO) {
         val file = File(workspaceDir, "USER.md")
         if (file.exists()) file.readText().trim() else null
+    }
+
+    suspend fun loadAgentProfiles(): List<AgentProfile> = withContext(Dispatchers.IO) {
+        val dir = File(workspaceDir, "agents")
+        if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".md") }
+            ?.sortedBy { it.name }
+            ?: return@withContext emptyList()
+        files.mapNotNull { file ->
+            val fm = parseFrontmatter(file.readText())
+            val enabled = fm.meta["enabled"]?.lowercase() != "false"
+            if (!enabled) return@mapNotNull null
+            val name = fm.meta["name"] ?: file.nameWithoutExtension
+            val description = fm.meta["description"] ?: ""
+            val triggers = fm.meta["triggers"]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?: emptyList()
+            AgentProfile(name = name, description = description, triggers = triggers, systemPromptExtension = fm.body)
+        }
+    }
+
+    suspend fun setUserField(key: String, value: String): Unit = withContext(Dispatchers.IO) {
+        val file = File(workspaceDir, "USER.md")
+        val existing = if (file.exists()) file.readText() else ""
+        val lines = existing.lines().toMutableList()
+        val idx = lines.indexOfFirst { it.trimStart().startsWith("$key:") }
+        if (idx >= 0) {
+            lines[idx] = "$key: $value"
+        } else {
+            lines.add("$key: $value")
+        }
+        // Trim trailing blank lines then add final newline
+        val result = lines.dropLastWhile { it.isBlank() }.joinToString("\n") + "\n"
+        file.parentFile?.mkdirs()
+        file.writeText(result)
     }
 
     fun lastChatId(): Long? {
