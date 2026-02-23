@@ -2,6 +2,7 @@ package com.assistant.telegram
 
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
+import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
 import com.github.kotlintelegrambot.dispatcher.message
@@ -14,22 +15,36 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
+import java.io.File
 import java.util.logging.Logger
 
 class TelegramAdapter(
     private val token: String,
     private val gateway: Gateway,
-    private val timeoutMs: Long = 120_000L
+    private val timeoutMs: Long = 120_000L,
+    private val lastChatIdFile: File = File(System.getProperty("user.home"), ".assistant/last-chat-id")
 ) {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
     private val scope = CoroutineScope(Dispatchers.IO)
     private val semaphore = Semaphore(4)
+    private var telegramBot: Bot? = null
 
     fun normalize(senderId: String, text: String): Message =
         Message(sender = senderId, text = text, channel = Channel.TELEGRAM)
 
+    internal fun writeChatId(chatId: Long) {
+        lastChatIdFile.parentFile?.mkdirs()
+        val tmp = File(lastChatIdFile.parentFile ?: File("."), ".last-chat-id.tmp")
+        tmp.writeText(chatId.toString())
+        tmp.renameTo(lastChatIdFile)
+    }
+
+    fun sendProactive(chatId: Long, text: String) {
+        telegramBot?.sendMessage(ChatId.fromId(chatId), text)
+    }
+
     fun start() {
-        val telegramBot = bot {
+        telegramBot = bot {
             this.token = this@TelegramAdapter.token
             dispatch {
                 message(Filter.Text) {
@@ -37,6 +52,7 @@ class TelegramAdapter(
                     val text = message.text ?: return@message
                     val normalizedMsg = normalize(chatId.toString(), text)
                     scope.launch {
+                        writeChatId(chatId)
                         semaphore.withPermit {
                             try {
                                 val response = withTimeout(this@TelegramAdapter.timeoutMs) {
@@ -55,6 +71,6 @@ class TelegramAdapter(
                 }
             }
         }
-        telegramBot.startPolling()
+        telegramBot!!.startPolling()
     }
 }
