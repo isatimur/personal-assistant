@@ -3,9 +3,10 @@ package com.assistant.telegram
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
 import io.mockk.*
-import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.io.File
 
 class TelegramAdapterTest {
     @Test
@@ -27,8 +28,32 @@ class TelegramAdapterTest {
 
     @Test
     fun `constructor accepts custom timeoutMs`() {
-        // Verifies the parameter is wired - no exception should be thrown
         val adapter = TelegramAdapter(token = "fake", gateway = mockk(), timeoutMs = 5_000L)
         assertNotNull(adapter)
+    }
+
+    @Test
+    fun `writeChatId writes chatId to file atomically`(@TempDir tmpDir: File) {
+        val chatIdFile = File(tmpDir, "last-chat-id")
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), lastChatIdFile = chatIdFile)
+        adapter.writeChatId(987654321L)
+        assertTrue(chatIdFile.exists(), "last-chat-id file should exist after write")
+        assertEquals("987654321", chatIdFile.readText())
+    }
+
+    @Test
+    fun `writeChatId overwrites previous value`(@TempDir tmpDir: File) {
+        val chatIdFile = File(tmpDir, "last-chat-id")
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), lastChatIdFile = chatIdFile)
+        adapter.writeChatId(111L)
+        adapter.writeChatId(222L)
+        assertEquals("222", chatIdFile.readText())
+    }
+
+    @Test
+    fun `sendProactive is no-op before start`() {
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk())
+        // Should not throw - bot is null before start()
+        assertDoesNotThrow { adapter.sendProactive(12345L, "Hello") }
     }
 }
