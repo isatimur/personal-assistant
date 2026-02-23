@@ -42,6 +42,6 @@ tools:
     password: ""
 
 heartbeat:
-  enabled: false
+  enabled: true
   every: "1h"
   prompt: "Check if there's anything proactive you should do."
