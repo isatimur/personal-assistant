@@ -272,4 +272,45 @@ class TelegramAdapterTest {
         assertTrue(result)
         verify { bot.sendMessage(any(), match { it.contains("Usage", ignoreCase = true) }) }
     }
+
+    // ── /user ─────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `slash user shows USER_md content`(@TempDir tmpDir: File) = runTest {
+        val workspaceDir = File(tmpDir, "workspace").also { it.mkdirs() }
+        File(workspaceDir, "USER.md").writeText("name: Timur\ntimezone: Europe/Bratislava")
+        val bot = mockk<Bot>(relaxed = true)
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk(relaxed = true), workspaceDir = workspaceDir)
+
+        val result = adapter.handleCommand(bot, 1L, "/user")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("name: Timur") }) }
+    }
+
+    @Test
+    fun `slash user sends message when USER_md absent`(@TempDir tmpDir: File) = runTest {
+        val workspaceDir = File(tmpDir, "workspace").also { it.mkdirs() }
+        val bot = mockk<Bot>(relaxed = true)
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk(relaxed = true), workspaceDir = workspaceDir)
+
+        val result = adapter.handleCommand(bot, 1L, "/user")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("No USER.md", ignoreCase = true) }) }
+    }
+
+    @Test
+    fun `slash user set updates field and confirms`(@TempDir tmpDir: File) = runTest {
+        val workspaceDir = File(tmpDir, "workspace").also { it.mkdirs() }
+        File(workspaceDir, "USER.md").writeText("name: Timur\ntimezone: Europe/Bratislava\n")
+        val bot = mockk<Bot>(relaxed = true)
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk(relaxed = true), workspaceDir = workspaceDir)
+
+        val result = adapter.handleCommand(bot, 1L, "/user set timezone Europe/London")
+
+        assertTrue(result)
+        verify { bot.sendMessage(any(), match { it.contains("timezone") && it.contains("Europe/London") }) }
+        assertTrue(File(workspaceDir, "USER.md").readText().contains("timezone: Europe/London"))
+    }
 }

@@ -24,7 +24,8 @@ class ContextAssembler(
             val skills: List<SkillEntry>,
             val facts: List<String>,
             val history: List<Message>,
-            val relevant: List<String>
+            val relevant: List<String>,
+            val agentProfiles: List<AgentProfile>
         )
 
         val ctx = coroutineScope {
@@ -36,8 +37,11 @@ class ContextAssembler(
             val f  = async { memory.facts(session.userId) }
             val h  = async { memory.history(session.id, windowSize) }
             val r  = async { memory.search(session.userId, currentMessage.text, searchLimit) }
-            Ctx(b.await(), i.await(), s.await(), u.await(), sk.await(), f.await(), h.await(), r.await())
+            val ap = async { workspace.loadAgentProfiles() }
+            Ctx(b.await(), i.await(), s.await(), u.await(), sk.await(), f.await(), h.await(), r.await(), ap.await())
         }
+
+        val matchedProfile = AgentRouter.route(currentMessage.text, ctx.agentProfiles)
 
         val systemPrompt = buildString {
             // 1. Bootstrap context
@@ -91,6 +95,12 @@ class ContextAssembler(
             if (ctx.relevant.isNotEmpty()) {
                 appendLine("\nRelevant past context:")
                 ctx.relevant.forEach { appendLine(it) }
+            }
+            // 10. Active agent profile
+            if (matchedProfile != null) {
+                appendLine()
+                appendLine("## Active Agent: ${matchedProfile.name}")
+                appendLine(matchedProfile.systemPromptExtension)
             }
         }
 
