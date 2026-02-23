@@ -12,7 +12,7 @@ import dev.langchain4j.model.openai.OpenAiChatModel
 
 class LangChain4jProvider(private val config: ModelConfig) : LlmPort {
     private val model: ChatLanguageModel = when (config.provider.lowercase()) {
-        "openai" -> OpenAiChatModel.builder().apiKey(config.apiKey).modelName(config.model).temperature(1.0).build()
+        "openai" -> OpenAiChatModel.builder().apiKey(config.apiKey).modelName(config.model).build()
         "anthropic" -> AnthropicChatModel.builder().apiKey(config.apiKey).modelName(config.model).build()
         "ollama" -> OllamaChatModel.builder()
             .baseUrl(config.baseUrl ?: "http://localhost:11434")
