@@ -214,4 +214,42 @@ class SqliteMemoryStoreTest {
             concurrentDir.deleteRecursively()
         }
     }
+
+    // ── trimHistory ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `trimHistory deletes oldest N messages`() = runTest {
+        val store = SqliteMemoryStore(":memory:").also { it.init() }
+        val session = "s1"
+        repeat(5) { i ->
+            store.append(session, Message("user", "msg$i", Channel.TELEGRAM))
+        }
+        store.trimHistory(session, deleteCount = 3)
+        val remaining = store.history(session, limit = 10)
+        assertEquals(2, remaining.size)
+        assertEquals("msg3", remaining[0].text)
+        assertEquals("msg4", remaining[1].text)
+    }
+
+    @Test
+    fun `trimHistory is a no-op when deleteCount exceeds history size`() = runTest {
+        val store = SqliteMemoryStore(":memory:").also { it.init() }
+        store.append("s1", Message("user", "only", Channel.TELEGRAM))
+        store.trimHistory("s1", deleteCount = 10)
+        val remaining = store.history("s1", limit = 10)
+        assertEquals(1, remaining.size)
+    }
+
+    @Test
+    fun `stats returns correct counts`() = runTest {
+        val store = SqliteMemoryStore(":memory:").also { it.init() }
+        val userId = "user1"
+        store.append("s1", Message(userId, "hello world", Channel.TELEGRAM))
+        store.saveFact(userId, "likes coffee")
+        store.saveFact(userId, "works in tech")
+        val stats = store.stats(userId)
+        assertEquals(2, stats.factsCount)
+        assertTrue(stats.messageCount >= 1)
+        assertTrue(stats.chunkCount >= 1)
+    }
 }
