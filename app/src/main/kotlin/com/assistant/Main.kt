@@ -46,10 +46,17 @@ fun main() {
     val workspace = WorkspaceLoader()
     val registry = ToolRegistry(tools)
     val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
-    val engine = AgentEngine(llm, memory, registry, assembler)
+    val compaction = CompactionService(llm, memory, threshold = 15)
+    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction)
     val gateway = Gateway(engine)
 
-    val telegram = TelegramAdapter(config.telegram.token, gateway, memory, config.telegram.timeoutMs)
+    val telegram = TelegramAdapter(
+        config.telegram.token,
+        gateway,
+        memory,
+        config.telegram.timeoutMs,
+        modelName = config.llm.model
+    )
 
     val reminderManager = ReminderManager(
         persistFile = File(workspace.workspaceDir, "reminders.json"),

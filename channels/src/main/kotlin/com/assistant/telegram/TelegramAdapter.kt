@@ -31,7 +31,9 @@ class TelegramAdapter(
     private val memory: MemoryPort,
     private val timeoutMs: Long = 120_000L,
     private val lastChatIdFile: File = File(System.getProperty("user.home"), ".assistant/last-chat-id"),
-    private val workspaceDir: File = File(System.getProperty("user.home"), ".assistant")
+    private val workspaceDir: File = File(System.getProperty("user.home"), ".assistant"),
+    private val modelName: String = "",
+    private val startTime: Long = System.currentTimeMillis()
 ) {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -131,6 +133,21 @@ class TelegramAdapter(
                     bot.sendMessage(ChatId.fromId(chatId), "Updated $key \u2192 $value")
                 }
             }
+            text == "/status" -> {
+                val stats = memory.stats(chatId.toString())
+                val uptimeMs = System.currentTimeMillis() - startTime
+                val uptimeMin = uptimeMs / 60_000
+                val uptimeStr = if (uptimeMin < 60) "${uptimeMin}m" else "${uptimeMin / 60}h ${uptimeMin % 60}m"
+                bot.sendMessage(
+                    ChatId.fromId(chatId),
+                    "Bot status\n" +
+                    "Facts: ${stats.factsCount}\n" +
+                    "Chunks: ${stats.chunkCount}\n" +
+                    "Messages: ${stats.messageCount}\n" +
+                    (if (modelName.isNotBlank()) "Model: $modelName\n" else "") +
+                    "Uptime: $uptimeStr"
+                )
+            }
             text == "/help" -> {
                 bot.sendMessage(
                     ChatId.fromId(chatId),
@@ -141,6 +158,7 @@ class TelegramAdapter(
                     "/remind <duration> <text> — set a reminder (e.g. /remind 30m call Artur)\n" +
                     "/user — show your USER.md profile\n" +
                     "/user set <key> <value> — update a field in your profile\n" +
+                    "/status — show memory stats and bot info\n" +
                     "/help — show this message"
                 )
             }
@@ -149,6 +167,41 @@ class TelegramAdapter(
             }
         }
         return true
+    }
+
+    /** Splits text into progressively longer strings for a "live typing" effect. */
+    internal fun buildStreamChunks(text: String, chunkSize: Int = 40): List<String> {
+        if (text.length <= chunkSize) return listOf(text)
+        val chunks = mutableListOf<String>()
+        var pos = chunkSize
+        while (pos < text.length) {
+            chunks.add(text.substring(0, pos))
+            pos += chunkSize
+        }
+        chunks.add(text)
+        return chunks
+    }
+
+    /** Sends text as a new message then edits it progressively to simulate streaming. */
+    internal suspend fun streamToChat(bot: Bot, chatId: Long, text: String) {
+        val chunks = buildStreamChunks(text)
+        if (chunks.size == 1) {
+            bot.sendMessage(ChatId.fromId(chatId), text)
+            return
+        }
+        val sent = bot.sendMessage(ChatId.fromId(chatId), chunks[0])
+        val messageId = sent.getOrNull()?.messageId ?: run {
+            bot.sendMessage(ChatId.fromId(chatId), text)
+            return
+        }
+        for (chunk in chunks.drop(1)) {
+            delay(80)
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = messageId,
+                text = chunk
+            )
+        }
     }
 
     fun start() {
@@ -179,9 +232,14 @@ class TelegramAdapter(
                             semaphore.withPermit {
                                 try {
                                     val response = withTimeout(this@TelegramAdapter.timeoutMs) {
-                                        gateway.handle(normalizedMsg)
+                                        gateway.handle(normalizedMsg) { progressMsg ->
+                                            scope.launch {
+                                                bot.sendMessage(ChatId.fromId(chatId), progressMsg)
+                                            }
+                                        }
                                     }
-                                    bot.sendMessage(ChatId.fromId(chatId), response)
+                                    typingJob.cancel()
+                                    streamToChat(bot, chatId, response)
                                 } catch (e: TimeoutCancellationException) {
                                     logger.severe("Request timed out for chat $chatId")
                                     bot.sendMessage(ChatId.fromId(chatId), "Request timed out. Please try again.")

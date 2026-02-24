@@ -2,6 +2,8 @@ package com.assistant.ports
 
 import com.assistant.domain.*
 
+data class MemoryStats(val factsCount: Int, val chunkCount: Int, val messageCount: Int)
+
 data class ChatMessage(val role: String, val content: String)
 
 interface LlmPort {
@@ -26,4 +28,6 @@ interface MemoryPort {
     suspend fun deleteFact(userId: String, fact: String)
     suspend fun search(userId: String, query: String, limit: Int = 5): List<String>
     suspend fun clearHistory(sessionId: String)
+    suspend fun trimHistory(sessionId: String, deleteCount: Int)
+    suspend fun stats(userId: String): MemoryStats
 }

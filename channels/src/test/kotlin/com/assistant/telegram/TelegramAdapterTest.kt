@@ -3,6 +3,7 @@ package com.assistant.telegram
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
 import com.assistant.ports.MemoryPort
+import com.assistant.ports.MemoryStats
 import com.github.kotlintelegrambot.Bot
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
@@ -312,5 +313,44 @@ class TelegramAdapterTest {
         assertTrue(result)
         verify { bot.sendMessage(any(), match { it.contains("timezone") && it.contains("Europe/London") }) }
         assertTrue(File(workspaceDir, "USER.md").readText().contains("timezone: Europe/London"))
+    }
+
+    // ── /status ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `status command sends formatted message with stats`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        val stats = MemoryStats(factsCount = 5, chunkCount = 100, messageCount = 42)
+        coEvery { memory.stats(any()) } returns stats
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+
+        adapter.handleCommand(bot, 1L, "/status")
+
+        verify { bot.sendMessage(any(), match { msg ->
+            msg.contains("Facts: 5") &&
+            msg.contains("Chunks: 100") &&
+            msg.contains("Messages: 42") &&
+            msg.contains("Bot status")
+        }) }
+    }
+
+    // ── buildStreamChunks ─────────────────────────────────────────────────────
+
+    @Test
+    fun `buildStreamChunks splits text into progressively longer chunks`() {
+        val adapter = TelegramAdapter("tok", mockk(relaxed = true), mockk(relaxed = true))
+        val result = adapter.buildStreamChunks("Hello world how are you doing today", chunkSize = 10)
+        assertTrue(result.size > 1)
+        assertEquals("Hello world how are you doing today", result.last())
+        result.zipWithNext { a, b -> assertTrue(b.length > a.length) }
+    }
+
+    @Test
+    fun `buildStreamChunks returns single element for text shorter than chunkSize`() {
+        val adapter = TelegramAdapter("tok", mockk(relaxed = true), mockk(relaxed = true))
+        val result = adapter.buildStreamChunks("Hi", chunkSize = 40)
+        assertEquals(1, result.size)
+        assertEquals("Hi", result[0])
     }
 }
