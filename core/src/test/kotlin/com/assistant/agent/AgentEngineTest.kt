@@ -88,4 +88,38 @@ class AgentEngineTest {
         val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
         assertEquals("I am just talking without any markers.", response)
     }
+
+    @Test
+    fun `onProgress callback fires with tool name before execution`() = runTest {
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "list files"))
+        coEvery { llm.complete(any()) } returnsMany listOf(
+            "THOUGHT: need files\nACTION: file_list\nARGS: {\"path\": \"/tmp\"}",
+            "FINAL: done"
+        )
+        coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
+        coEvery { memory.append(any(), any()) } just runs
+
+        val progressMessages = mutableListOf<String>()
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
+        engine.process(
+            Session("s1", "user1", Channel.TELEGRAM),
+            Message("user1", "list files", Channel.TELEGRAM),
+            onProgress = { progressMessages.add(it) }
+        )
+        assertTrue(progressMessages.any { it.contains("file_list") })
+    }
+
+    @Test
+    fun `compaction is called before context build`() = runTest {
+        val compaction = mockk<CompactionService>()
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
+        coEvery { llm.complete(any()) } returns "FINAL: Hello!"
+        coEvery { memory.append(any(), any()) } just runs
+        coEvery { compaction.maybeCompact(any(), any()) } just runs
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, compactionService = compaction)
+        engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+
+        coVerify { compaction.maybeCompact("s1", "user1") }
+    }
 }
