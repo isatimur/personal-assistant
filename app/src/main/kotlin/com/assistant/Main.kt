@@ -1,7 +1,6 @@
 package com.assistant
 
 import com.assistant.agent.*
-import com.assistant.agent.CompactionService
 import com.assistant.gateway.Gateway
 import com.assistant.heartbeat.HeartbeatAgent
 import com.assistant.heartbeat.HeartbeatConfig
