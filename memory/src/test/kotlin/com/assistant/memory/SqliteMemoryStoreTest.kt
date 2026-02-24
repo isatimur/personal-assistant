@@ -214,4 +214,67 @@ class SqliteMemoryStoreTest {
             concurrentDir.deleteRecursively()
         }
     }
+
+    // ── trimHistory ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `trimHistory deletes oldest N messages`() = runTest {
+        val store = SqliteMemoryStore(":memory:").also { it.init() }
+        val session = "s1"
+        repeat(5) { i ->
+            store.append(session, Message("user", "msg$i", Channel.TELEGRAM))
+        }
+        store.trimHistory(session, deleteCount = 3)
+        val remaining = store.history(session, limit = 10)
+        assertEquals(2, remaining.size)
+        assertEquals("msg3", remaining[0].text)
+        assertEquals("msg4", remaining[1].text)
+    }
+
+    @Test
+    fun `trimHistory also removes chunks for trimmed messages`() = runTest {
+        val dir = Files.createTempDirectory("trim-chunks").toFile()
+        val store = SqliteMemoryStore(":memory:", memoryDir = dir).also { it.init() }
+        // Append 5 messages — each generates at least one chunk
+        repeat(5) { i -> store.append("s1", Message("user", "message content $i", Channel.TELEGRAM)) }
+        val statsBefore = store.stats("user")
+        assertTrue(statsBefore.chunkCount >= 5)
+        // Trim 3 oldest messages
+        store.trimHistory("s1", deleteCount = 3)
+        // Messages count should drop
+        val remaining = store.history("s1", limit = 10)
+        assertEquals(2, remaining.size)
+        // Chunk count should also drop
+        val statsAfter = store.stats("user")
+        assertTrue(statsAfter.chunkCount < statsBefore.chunkCount,
+            "Expected fewer chunks after trim: before=${statsBefore.chunkCount}, after=${statsAfter.chunkCount}")
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun `trimHistory deletes all messages when deleteCount exceeds history size`() = runTest {
+        val store = SqliteMemoryStore(":memory:").also { it.init() }
+        store.append("trim-noop", Message("user", "only", Channel.TELEGRAM))
+        store.trimHistory("trim-noop", deleteCount = 10)
+        val remaining = store.history("trim-noop", limit = 10)
+        assertEquals(0, remaining.size)
+    }
+
+    @Test
+    fun `stats returns correct counts`() = runTest {
+        val statsDir = Files.createTempDirectory("assistant-stats").toFile()
+        try {
+            val store = SqliteMemoryStore(":memory:", memoryDir = statsDir).also { it.init() }
+            val userId = "user1"
+            store.append("s1", Message(userId, "hello world", Channel.TELEGRAM))
+            store.saveFact(userId, "likes coffee")
+            store.saveFact(userId, "works in tech")
+            val stats = store.stats(userId)
+            assertEquals(2, stats.factsCount)
+            assertEquals(1, stats.messageCount)
+            assertEquals(1, stats.chunkCount)
+        } finally {
+            statsDir.deleteRecursively()
+        }
+    }
 }

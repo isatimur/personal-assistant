@@ -3,6 +3,7 @@ package com.assistant.memory
 import com.assistant.domain.*
 import com.assistant.ports.EmbeddingPort
 import com.assistant.ports.MemoryPort
+import com.assistant.ports.MemoryStats
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -177,6 +178,41 @@ class SqliteMemoryStore(
             transaction(db) {
                 Messages.deleteWhere { with(it) { Messages.sessionId eq sessionId } }
                 Chunks.deleteWhere { with(it) { Chunks.sessionId eq sessionId } }
+            }
+        }
+    }
+
+    override suspend fun trimHistory(sessionId: String, deleteCount: Int) {
+        if (deleteCount <= 0) return
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                val oldest = Messages
+                    .selectAll()
+                    .where { Messages.sessionId eq sessionId }
+                    .orderBy(Messages.createdAt, SortOrder.ASC)
+                    .limit(deleteCount)
+                    .toList()
+                if (oldest.isEmpty()) return@transaction
+                val maxCreatedAt = oldest.maxOf { it[Messages.createdAt] }
+                Messages.deleteWhere { with(it) { Messages.id inList oldest.map { row -> row[Messages.id].value } } }
+                Chunks.deleteWhere { with(it) {
+                    (Chunks.sessionId eq sessionId) and (Chunks.createdAt lessEq maxCreatedAt)
+                } }
+            }
+        }
+    }
+
+    override suspend fun stats(userId: String): MemoryStats {
+        val factsCount = facts(userId).size
+        return withContext(Dispatchers.IO) {
+            transaction(db) {
+                val messageCount = Messages.selectAll()
+                    .where { Messages.userId eq userId }
+                    .count().toInt()
+                val chunkCount = Chunks.selectAll()
+                    .where { Chunks.userId eq userId }
+                    .count().toInt()
+                MemoryStats(factsCount = factsCount, chunkCount = chunkCount, messageCount = messageCount)
             }
         }
     }
