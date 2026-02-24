@@ -183,12 +183,9 @@ class SqliteMemoryStore(
     }
 
     override suspend fun trimHistory(sessionId: String, deleteCount: Int) {
+        if (deleteCount <= 0) return
         withContext(Dispatchers.IO) {
             transaction(db) {
-                val totalCount = Messages.selectAll()
-                    .where { Messages.sessionId eq sessionId }
-                    .count().toInt()
-                if (deleteCount >= totalCount) return@transaction
                 val oldestIds = Messages
                     .selectAll()
                     .where { Messages.sessionId eq sessionId }

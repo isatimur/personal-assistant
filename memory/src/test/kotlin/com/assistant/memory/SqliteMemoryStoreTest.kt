@@ -232,12 +232,12 @@ class SqliteMemoryStoreTest {
     }
 
     @Test
-    fun `trimHistory is a no-op when deleteCount exceeds history size`() = runTest {
+    fun `trimHistory deletes all messages when deleteCount exceeds history size`() = runTest {
         val store = SqliteMemoryStore(":memory:").also { it.init() }
-        store.append("s1", Message("user", "only", Channel.TELEGRAM))
-        store.trimHistory("s1", deleteCount = 10)
-        val remaining = store.history("s1", limit = 10)
-        assertEquals(1, remaining.size)
+        store.append("trim-noop", Message("user", "only", Channel.TELEGRAM))
+        store.trimHistory("trim-noop", deleteCount = 10)
+        val remaining = store.history("trim-noop", limit = 10)
+        assertEquals(0, remaining.size)
     }
 
     @Test
@@ -251,8 +251,8 @@ class SqliteMemoryStoreTest {
             store.saveFact(userId, "works in tech")
             val stats = store.stats(userId)
             assertEquals(2, stats.factsCount)
-            assertTrue(stats.messageCount >= 1)
-            assertTrue(stats.chunkCount >= 1)
+            assertEquals(1, stats.messageCount)
+            assertEquals(1, stats.chunkCount)
         } finally {
             statsDir.deleteRecursively()
         }
