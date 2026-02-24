@@ -242,14 +242,19 @@ class SqliteMemoryStoreTest {
 
     @Test
     fun `stats returns correct counts`() = runTest {
-        val store = SqliteMemoryStore(":memory:").also { it.init() }
-        val userId = "user1"
-        store.append("s1", Message(userId, "hello world", Channel.TELEGRAM))
-        store.saveFact(userId, "likes coffee")
-        store.saveFact(userId, "works in tech")
-        val stats = store.stats(userId)
-        assertEquals(2, stats.factsCount)
-        assertTrue(stats.messageCount >= 1)
-        assertTrue(stats.chunkCount >= 1)
+        val statsDir = Files.createTempDirectory("assistant-stats").toFile()
+        try {
+            val store = SqliteMemoryStore(":memory:", memoryDir = statsDir).also { it.init() }
+            val userId = "user1"
+            store.append("s1", Message(userId, "hello world", Channel.TELEGRAM))
+            store.saveFact(userId, "likes coffee")
+            store.saveFact(userId, "works in tech")
+            val stats = store.stats(userId)
+            assertEquals(2, stats.factsCount)
+            assertTrue(stats.messageCount >= 1)
+            assertTrue(stats.chunkCount >= 1)
+        } finally {
+            statsDir.deleteRecursively()
+        }
     }
 }
