@@ -233,7 +233,7 @@ class SqliteMemoryStoreTest {
 
     @Test
     fun `trimHistory also removes chunks for trimmed messages`() = runTest {
-        val dir = createTempDir("trim-chunks")
+        val dir = Files.createTempDirectory("trim-chunks").toFile()
         val store = SqliteMemoryStore(":memory:", memoryDir = dir).also { it.init() }
         // Append 5 messages — each generates at least one chunk
         repeat(5) { i -> store.append("s1", Message("user", "message content $i", Channel.TELEGRAM)) }
