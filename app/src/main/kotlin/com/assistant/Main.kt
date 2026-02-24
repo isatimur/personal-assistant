@@ -15,10 +15,17 @@ import com.assistant.telegram.TelegramAdapter
 import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
 import com.assistant.tools.filesystem.FileSystemTool
+import com.assistant.tools.github.GitHubTool
 import com.assistant.tools.shell.ShellTool
 import com.assistant.tools.web.WebBrowserTool
 import com.assistant.workspace.WorkspaceLoader
 import java.io.File
+import java.nio.file.Paths
+import kotlin.system.exitProcess
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 fun main() {
     val config = loadConfig(secretsPath = "config/secrets.yml")
@@ -41,13 +48,17 @@ fun main() {
                 config.tools.email.smtpHost, config.tools.email.smtpPort,
                 config.tools.email.username, config.tools.email.password)))
         }
+        if (config.tools.github.enabled) {
+            add(GitHubTool(config.tools.github.token))
+        }
     }
 
     val workspace = WorkspaceLoader()
     val registry = ToolRegistry(tools)
     val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
     val compaction = CompactionService(llm, memory, threshold = 15)
-    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction)
+    val tokenTracker = TokenTracker()
+    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker)
     val gateway = Gateway(engine)
 
     val telegram = TelegramAdapter(
@@ -55,7 +66,8 @@ fun main() {
         gateway,
         memory,
         config.telegram.timeoutMs,
-        modelName = config.llm.model
+        modelName = config.llm.model,
+        tokenTracker = tokenTracker
     )
 
     val reminderManager = ReminderManager(
@@ -84,4 +96,19 @@ fun main() {
     println("Personal assistant starting... Send a message on Telegram!")
     telegram.start()
     heartbeat.start()
+
+    val mainScope = CoroutineScope(Dispatchers.Default)
+    val watcher = ConfigWatcher(
+        paths = listOf(Paths.get("config/application.yml"), Paths.get("config/secrets.yml")),
+        scope = mainScope,
+        onChange = {
+            println("Config changed — restarting")
+            workspace.lastChatId()?.let { chatId ->
+                telegram.sendProactive(chatId, "Config reloaded — restarting...")
+            }
+            delay(500)
+            exitProcess(0)
+        }
+    )
+    watcher.start()
 }

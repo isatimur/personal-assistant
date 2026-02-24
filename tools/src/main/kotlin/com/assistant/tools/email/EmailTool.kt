@@ -1,6 +1,8 @@
 package com.assistant.tools.email
 
 import com.assistant.domain.*
+import com.assistant.ports.CommandSpec
+import com.assistant.ports.ParamSpec
 import com.assistant.ports.ToolPort
 import jakarta.mail.Authenticator
 import jakarta.mail.Folder
@@ -14,6 +16,28 @@ import java.util.Properties
 class EmailTool(private val config: EmailConfig) : ToolPort {
     override val name = "email"
     override val description = "Reads and sends email. Commands: email_list(count), email_read(index), email_send(to, subject, body)"
+
+    override fun commands(): List<CommandSpec> = listOf(
+        CommandSpec(
+            name = "email_list",
+            description = "List the most recent emails from the inbox",
+            params = listOf(ParamSpec("count", "integer", "Number of emails to list", required = false))
+        ),
+        CommandSpec(
+            name = "email_read",
+            description = "Read a specific email by index (0 = most recent)",
+            params = listOf(ParamSpec("index", "integer", "Zero-based email index", required = false))
+        ),
+        CommandSpec(
+            name = "email_send",
+            description = "Send an email",
+            params = listOf(
+                ParamSpec("to", "string", "Recipient email address"),
+                ParamSpec("subject", "string", "Email subject line"),
+                ParamSpec("body", "string", "Email body text")
+            )
+        )
+    )
 
     override suspend fun execute(call: ToolCall): Observation {
         return when (call.name) {

@@ -40,6 +40,9 @@ tools:
     smtp-port: 587
     username: ""
     password: ""
+  github:
+    enabled: false
+    token: ""
 
 heartbeat:
   enabled: true

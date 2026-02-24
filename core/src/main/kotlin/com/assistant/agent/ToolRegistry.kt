@@ -1,6 +1,7 @@
 package com.assistant.agent
 
 import com.assistant.domain.*
+import com.assistant.ports.CommandSpec
 import com.assistant.ports.ToolPort
 
 class ToolRegistry(private val tools: List<ToolPort>) {
@@ -11,4 +12,6 @@ class ToolRegistry(private val tools: List<ToolPort>) {
     }
 
     fun describe(): String = tools.joinToString("\n\n") { "Tool: ${it.name}\n${it.description}" }
+
+    fun allCommands(): List<CommandSpec> = tools.flatMap { it.commands() }
 }

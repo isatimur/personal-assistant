@@ -1,6 +1,8 @@
 package com.assistant.tools.filesystem
 
 import com.assistant.domain.*
+import com.assistant.ports.CommandSpec
+import com.assistant.ports.ParamSpec
 import com.assistant.ports.ToolPort
 import java.io.File
 
@@ -13,6 +15,32 @@ class FileSystemTool(allowedPaths: List<String> = listOf(System.getProperty("use
     private val allowedRoots: List<File> = allowedPaths.map { p ->
         File(p.replace("~", System.getProperty("user.home"))).canonicalFile
     }
+
+    override fun commands(): List<CommandSpec> = listOf(
+        CommandSpec(
+            name = "file_read",
+            description = "Read the contents of a file",
+            params = listOf(ParamSpec("path", "string", "Absolute or home-relative file path"))
+        ),
+        CommandSpec(
+            name = "file_write",
+            description = "Write content to a file, creating parent directories if needed",
+            params = listOf(
+                ParamSpec("path", "string", "Absolute or home-relative file path"),
+                ParamSpec("content", "string", "Content to write to the file")
+            )
+        ),
+        CommandSpec(
+            name = "file_list",
+            description = "List files and directories in a directory",
+            params = listOf(ParamSpec("path", "string", "Directory path to list"))
+        ),
+        CommandSpec(
+            name = "file_delete",
+            description = "Delete a file",
+            params = listOf(ParamSpec("path", "string", "Absolute or home-relative file path to delete"))
+        )
+    )
 
     private fun assertAllowed(path: String) {
         val canonical = File(path).canonicalFile

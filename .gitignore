@@ -1,3 +1,4 @@
 .worktrees/
 **/build/
 config/secrets.yml
+CLAUDE.local.md

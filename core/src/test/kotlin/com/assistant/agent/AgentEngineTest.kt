@@ -13,11 +13,16 @@ class AgentEngineTest {
     private val toolRegistry = mockk<ToolRegistry>()
     private val assembler = mockk<ContextAssembler>()
 
-    @Test
-    fun `returns FINAL answer directly`() = runTest {
-        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
-        coEvery { llm.complete(any()) } returns "FINAL: Hello!"
+    private fun setupCommon() {
+        coEvery { toolRegistry.allCommands() } returns emptyList()
         coEvery { memory.append(any(), any()) } just runs
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
+    }
+
+    @Test
+    fun `returns text answer directly`() = runTest {
+        setupCommon()
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Hello!")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
         val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
@@ -25,14 +30,14 @@ class AgentEngineTest {
     }
 
     @Test
-    fun `executes tool then returns FINAL`() = runTest {
+    fun `executes tool then returns text`() = runTest {
+        setupCommon()
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "list files"))
-        coEvery { llm.complete(any()) } returnsMany listOf(
-            "THOUGHT: list files\nACTION: file_list\nARGS: {\"path\": \"/tmp\"}",
-            "FINAL: Found files in /tmp"
+        coEvery { llm.completeWithFunctions(any(), any()) } returnsMany listOf(
+            FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}"),
+            FunctionCompletion.Text("Found files in /tmp")
         )
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt\nb.txt")
-        coEvery { memory.append(any(), any()) } just runs
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
         val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "list files", Channel.TELEGRAM))
@@ -42,10 +47,10 @@ class AgentEngineTest {
 
     @Test
     fun `stops after max steps`() = runTest {
+        setupCommon()
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "loop"))
-        coEvery { llm.complete(any()) } returns "ACTION: file_list\nARGS: {\"path\": \"/\"}"
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/\"}")
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("result")
-        coEvery { memory.append(any(), any()) } just runs
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 2)
         val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "loop", Channel.TELEGRAM))
@@ -53,23 +58,15 @@ class AgentEngineTest {
     }
 
     @Test
-    fun `parses multi-line ARGS correctly`() = runTest {
-        val multiLineResponse = """
-            THOUGHT: need to write a file
-            ACTION: file_write
-            ARGS: {
-              "path": "/tmp/test.txt",
-              "content": "hello world"
-            }
-        """.trimIndent()
+    fun `parses multi-param function call correctly`() = runTest {
+        setupCommon()
         val capturedCall = slot<ToolCall>()
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "write"))
-        coEvery { llm.complete(any()) } returnsMany listOf(
-            multiLineResponse,
-            "FINAL: Done"
+        coEvery { llm.completeWithFunctions(any(), any()) } returnsMany listOf(
+            FunctionCompletion.FunctionCall("file_write", "{\"path\": \"/tmp/test.txt\", \"content\": \"hello world\"}"),
+            FunctionCompletion.Text("Done")
         )
         coEvery { toolRegistry.execute(capture(capturedCall)) } returns Observation.Success("Written")
-        coEvery { memory.append(any(), any()) } just runs
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
         engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "write", Channel.TELEGRAM))
@@ -79,25 +76,24 @@ class AgentEngineTest {
     }
 
     @Test
-    fun `malformed response with no markers returned as final answer`() = runTest {
-        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
-        coEvery { llm.complete(any()) } returns "I am just talking without any markers."
-        coEvery { memory.append(any(), any()) } just runs
+    fun `empty text response returned as final answer`() = runTest {
+        setupCommon()
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("I am just talking.")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
         val response = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
-        assertEquals("I am just talking without any markers.", response)
+        assertEquals("I am just talking.", response)
     }
 
     @Test
     fun `onProgress callback fires with tool name before execution`() = runTest {
+        setupCommon()
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "list files"))
-        coEvery { llm.complete(any()) } returnsMany listOf(
-            "THOUGHT: need files\nACTION: file_list\nARGS: {\"path\": \"/tmp\"}",
-            "FINAL: done"
+        coEvery { llm.completeWithFunctions(any(), any()) } returnsMany listOf(
+            FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}"),
+            FunctionCompletion.Text("done")
         )
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
-        coEvery { memory.append(any(), any()) } just runs
 
         val progressMessages = mutableListOf<String>()
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
@@ -111,29 +107,45 @@ class AgentEngineTest {
 
     @Test
     fun `compaction failure does not fail the request`() = runTest {
+        setupCommon()
         val compaction = mockk<CompactionService>()
-        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
-        coEvery { llm.complete(any()) } returns "FINAL: Hello!"
-        coEvery { memory.append(any(), any()) } just runs
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Hello!")
         coEvery { compaction.maybeCompact(any(), any()) } throws RuntimeException("LLM unavailable")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, compactionService = compaction)
         val result = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
 
-        assertEquals("Hello!", result)  // request succeeds despite compaction failure
+        assertEquals("Hello!", result)
     }
 
     @Test
     fun `compaction is called before context build`() = runTest {
+        setupCommon()
         val compaction = mockk<CompactionService>()
-        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
-        coEvery { llm.complete(any()) } returns "FINAL: Hello!"
-        coEvery { memory.append(any(), any()) } just runs
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Hello!")
         coEvery { compaction.maybeCompact(any(), any()) } just runs
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, compactionService = compaction)
         engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
 
         coVerify { compaction.maybeCompact("s1", "user1") }
+    }
+
+    @Test
+    fun `token tracker records usage from function call`() = runTest {
+        setupCommon()
+        val tracker = TokenTracker()
+        coEvery { llm.completeWithFunctions(any(), any()) } returnsMany listOf(
+            FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}", TokenUsage(100, 50)),
+            FunctionCompletion.Text("done", TokenUsage(200, 80))
+        )
+        coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5, tokenTracker = tracker)
+        engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+
+        val stats = tracker.sessionStats("s1")
+        assertEquals(300L, stats.inputTokens)
+        assertEquals(130L, stats.outputTokens)
     }
 }
