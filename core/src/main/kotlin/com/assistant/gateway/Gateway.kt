@@ -19,11 +19,11 @@ class Gateway(private val engine: AgentEngine, private val sessionTtlMs: Long = 
         lastActive.remove(sessionKey)
     }
 
-    suspend fun handle(message: Message): String {
+    suspend fun handle(message: Message, onProgress: ((String) -> Unit)? = null): String {
         evictExpired()
         val key = "${message.channel}:${message.sender}"
         val session = sessions.getOrPut(key) { Session(id = key, userId = message.sender, channel = message.channel) }
         lastActive[key] = System.currentTimeMillis()
-        return engine.process(session, message)
+        return engine.process(session, message, onProgress)
     }
 }

@@ -313,4 +313,23 @@ class TelegramAdapterTest {
         verify { bot.sendMessage(any(), match { it.contains("timezone") && it.contains("Europe/London") }) }
         assertTrue(File(workspaceDir, "USER.md").readText().contains("timezone: Europe/London"))
     }
+
+    // ── buildStreamChunks ─────────────────────────────────────────────────────
+
+    @Test
+    fun `buildStreamChunks splits text into progressively longer chunks`() {
+        val adapter = TelegramAdapter("tok", mockk(relaxed = true), mockk(relaxed = true))
+        val result = adapter.buildStreamChunks("Hello world how are you doing today", chunkSize = 10)
+        assertTrue(result.size > 1)
+        assertEquals("Hello world how are you doing today", result.last())
+        result.zipWithNext { a, b -> assertTrue(b.length > a.length) }
+    }
+
+    @Test
+    fun `buildStreamChunks returns single element for text shorter than chunkSize`() {
+        val adapter = TelegramAdapter("tok", mockk(relaxed = true), mockk(relaxed = true))
+        val result = adapter.buildStreamChunks("Hi", chunkSize = 40)
+        assertEquals(1, result.size)
+        assertEquals("Hi", result[0])
+    }
 }
