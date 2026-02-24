@@ -3,6 +3,7 @@ package com.assistant.memory
 import com.assistant.domain.*
 import com.assistant.ports.EmbeddingPort
 import com.assistant.ports.MemoryPort
+import com.assistant.ports.MemoryStats
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -77,9 +78,14 @@ class SqliteMemoryStore(
         val createdAt = long("created_at")
     }
 
+    object Facts : LongIdTable("facts") {
+        val userId = varchar("user_id", 128)
+        val text   = text("text")
+    }
+
     fun init() {
         transaction(db) {
-            SchemaUtils.create(Messages, Chunks)
+            SchemaUtils.create(Messages, Chunks, Facts)
             execInBatch(listOf(
                 """CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, content='chunks', content_rowid='id')""",
                 """CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text); END""",
@@ -153,6 +159,14 @@ class SqliteMemoryStore(
         }
 
     override suspend fun saveFact(userId: String, fact: String) {
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                Facts.insert {
+                    it[Facts.userId] = userId
+                    it[Facts.text] = fact
+                }
+            }
+        }
         fileMutex.withLock {
             withContext(Dispatchers.IO) {
                 memoryDir.mkdirs()
@@ -162,6 +176,11 @@ class SqliteMemoryStore(
     }
 
     override suspend fun deleteFact(userId: String, fact: String) {
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                Facts.deleteWhere { with(it) { (Facts.userId eq userId) and (Facts.text eq fact) } }
+            }
+        }
         fileMutex.withLock {
             withContext(Dispatchers.IO) {
                 if (!memoryFile.exists()) return@withContext
@@ -180,6 +199,42 @@ class SqliteMemoryStore(
             }
         }
     }
+
+    override suspend fun trimHistory(sessionId: String, deleteCount: Int) {
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                val totalCount = Messages.selectAll()
+                    .where { Messages.sessionId eq sessionId }
+                    .count().toInt()
+                if (deleteCount >= totalCount) return@transaction
+                val oldestIds = Messages
+                    .selectAll()
+                    .where { Messages.sessionId eq sessionId }
+                    .orderBy(Messages.createdAt, SortOrder.ASC)
+                    .limit(deleteCount)
+                    .map { it[Messages.id].value }
+                if (oldestIds.isNotEmpty()) {
+                    Messages.deleteWhere { with(it) { Messages.id inList oldestIds } }
+                }
+            }
+        }
+    }
+
+    override suspend fun stats(userId: String): MemoryStats =
+        withContext(Dispatchers.IO) {
+            transaction(db) {
+                val factsCount = Facts.selectAll()
+                    .where { Facts.userId eq userId }
+                    .count().toInt()
+                val messageCount = Messages.selectAll()
+                    .where { Messages.userId eq userId }
+                    .count().toInt()
+                val chunkCount = Chunks.selectAll()
+                    .where { Chunks.userId eq userId }
+                    .count().toInt()
+                MemoryStats(factsCount = factsCount, chunkCount = chunkCount, messageCount = messageCount)
+            }
+        }
 
     override suspend fun search(userId: String, query: String, limit: Int): List<String> {
         if (query.isBlank()) return emptyList()
