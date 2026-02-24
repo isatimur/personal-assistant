@@ -80,13 +80,7 @@ class ContextAssembler(
                     appendLine(skill.body)
                 }
             }
-            // 7. ReAct format
-            appendLine("\nTo use a tool, respond EXACTLY with:")
-            appendLine("THOUGHT: <reasoning>")
-            appendLine("ACTION: <command_name>")
-            appendLine("ARGS: {\"key\": \"value\"}")
-            appendLine("\nTo give a final answer: FINAL: <response>")
-            // 8. User facts
+            // 7. User facts
             if (ctx.facts.isNotEmpty()) {
                 appendLine("\nKnown facts about this user:")
                 ctx.facts.forEach { appendLine("- $it") }

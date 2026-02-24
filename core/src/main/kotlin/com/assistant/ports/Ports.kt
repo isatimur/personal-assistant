@@ -6,13 +6,35 @@ data class MemoryStats(val factsCount: Int, val chunkCount: Int, val messageCoun
 
 data class ChatMessage(val role: String, val content: String)
 
+data class ParamSpec(
+    val name: String,
+    val type: String,        // "string", "integer", "boolean"
+    val description: String,
+    val required: Boolean = true
+)
+
+data class CommandSpec(
+    val name: String,
+    val description: String,
+    val params: List<ParamSpec>
+)
+
+data class TokenUsage(val inputTokens: Int, val outputTokens: Int)
+
+sealed class FunctionCompletion {
+    data class Text(val content: String, val usage: TokenUsage? = null) : FunctionCompletion()
+    data class FunctionCall(val name: String, val argsJson: String, val usage: TokenUsage? = null) : FunctionCompletion()
+}
+
 interface LlmPort {
     suspend fun complete(messages: List<ChatMessage>): String
+    suspend fun completeWithFunctions(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion
 }
 
 interface ToolPort {
     val name: String
     val description: String
+    fun commands(): List<CommandSpec>
     suspend fun execute(call: ToolCall): Observation
 }
 

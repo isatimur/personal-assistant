@@ -1,6 +1,8 @@
 package com.assistant.tools.web
 
 import com.assistant.domain.*
+import com.assistant.ports.CommandSpec
+import com.assistant.ports.ParamSpec
 import com.assistant.ports.ToolPort
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,6 +18,23 @@ class WebBrowserTool(private val maxContentChars: Int = 8_000) : ToolPort {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
+
+    override fun commands(): List<CommandSpec> = listOf(
+        CommandSpec(
+            name = "web_fetch",
+            description = "Fetch and extract text content from a URL",
+            params = listOf(
+                ParamSpec("url", "string", "The URL to fetch")
+            )
+        ),
+        CommandSpec(
+            name = "web_search",
+            description = "Search the web using DuckDuckGo and return results",
+            params = listOf(
+                ParamSpec("query", "string", "The search query")
+            )
+        )
+    )
 
     override suspend fun execute(call: ToolCall): Observation {
         return when (call.name) {

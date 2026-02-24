@@ -1,5 +1,6 @@
 package com.assistant.telegram
 
+import com.assistant.agent.TokenTracker
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
 import com.assistant.ports.MemoryPort
@@ -33,7 +34,8 @@ class TelegramAdapter(
     private val lastChatIdFile: File = File(System.getProperty("user.home"), ".assistant/last-chat-id"),
     private val workspaceDir: File = File(System.getProperty("user.home"), ".assistant"),
     private val modelName: String = "",
-    private val startTime: Long = System.currentTimeMillis()
+    private val startTime: Long = System.currentTimeMillis(),
+    private val tokenTracker: TokenTracker? = null
 ) {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -138,12 +140,19 @@ class TelegramAdapter(
                 val uptimeMs = System.currentTimeMillis() - startTime
                 val uptimeMin = uptimeMs / 60_000
                 val uptimeStr = if (uptimeMin < 60) "${uptimeMin}m" else "${uptimeMin / 60}h ${uptimeMin % 60}m"
+                val tokenLines = if (tokenTracker != null) {
+                    val session = tokenTracker.sessionStats(sessionKey)
+                    val global = tokenTracker.globalStats()
+                    "Tokens (session): ${session.inputTokens} in / ${session.outputTokens} out\n" +
+                    "Tokens (total):   ${global.inputTokens} in / ${global.outputTokens} out\n"
+                } else ""
                 bot.sendMessage(
                     ChatId.fromId(chatId),
                     "Bot status\n" +
                     "Facts: ${stats.factsCount}\n" +
                     "Chunks: ${stats.chunkCount}\n" +
                     "Messages: ${stats.messageCount}\n" +
+                    tokenLines +
                     (if (modelName.isNotBlank()) "Model: $modelName\n" else "") +
                     "Uptime: $uptimeStr"
                 )

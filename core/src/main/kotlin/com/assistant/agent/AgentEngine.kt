@@ -10,12 +10,10 @@ class AgentEngine(
     private val toolRegistry: ToolRegistry,
     private val assembler: ContextAssembler,
     private val maxSteps: Int = 10,
-    private val compactionService: CompactionService? = null
+    private val compactionService: CompactionService? = null,
+    private val tokenTracker: TokenTracker? = null
 ) {
     private val logger = java.util.logging.Logger.getLogger(AgentEngine::class.java.name)
-    private val actionRegex = Regex("""ACTION\s*:\s*(.+)""", RegexOption.IGNORE_CASE)
-    private val argsRegex   = Regex("""ARGS\s*:\s*([\s\S]+?)(?=\nACTION|\nFINAL|\nTHOUGHT|$)""", RegexOption.IGNORE_CASE)
-    private val finalRegex  = Regex("""FINAL\s*(?:ANSWER)?\s*:\s*([\s\S]+)""", RegexOption.IGNORE_CASE)
 
     suspend fun process(
         session: Session,
@@ -29,38 +27,36 @@ class AgentEngine(
             logger.warning("Compaction failed for session ${session.id}: ${e.message}")
         }
         val context = assembler.build(session, message).toMutableList()
+        val commands = toolRegistry.allCommands()
 
         repeat(maxSteps) {
-            val response = llm.complete(context)
-            context.add(ChatMessage("assistant", response))
-
-            val finalAnswer = finalRegex.find(response)?.groupValues?.get(1)?.trim()
-            if (finalAnswer != null) {
-                memory.append(session.id, Message("assistant", finalAnswer, session.channel))
-                return finalAnswer
-            }
-
-            val toolName = actionRegex.find(response)?.groupValues?.get(1)?.trim()
-            if (toolName != null) {
-                onProgress?.invoke("Using $toolName...")
-                val argsText = argsRegex.find(response)?.groupValues?.get(1)?.trim() ?: "{}"
-                val args = parseArgs(argsText)
-                val observation = toolRegistry.execute(ToolCall(toolName, args))
-                val obs = when (observation) {
-                    is Observation.Success -> "OBSERVATION: ${observation.result}"
-                    is Observation.Error -> "OBSERVATION ERROR: ${observation.message}"
+            val completion = llm.completeWithFunctions(context, commands)
+            when (completion) {
+                is FunctionCompletion.FunctionCall -> {
+                    tokenTracker?.record(session.id, completion.usage)
+                    onProgress?.invoke("Using ${completion.name}...")
+                    val args = parseArgsJson(completion.argsJson)
+                    val observation = toolRegistry.execute(ToolCall(completion.name, args))
+                    val obs = when (observation) {
+                        is Observation.Success -> "Result: ${observation.result}"
+                        is Observation.Error -> "Error: ${observation.message}"
+                    }
+                    context.add(ChatMessage("assistant", "Used ${completion.name}"))
+                    context.add(ChatMessage("user", obs))
                 }
-                context.add(ChatMessage("user", obs))
-            } else {
-                memory.append(session.id, Message("assistant", response, session.channel))
-                return response
+                is FunctionCompletion.Text -> {
+                    tokenTracker?.record(session.id, completion.usage)
+                    val answer = completion.content
+                    memory.append(session.id, Message("assistant", answer, session.channel))
+                    return answer
+                }
             }
         }
 
         return "I reached the maximum reasoning steps. Please try a simpler request."
     }
 
-    private fun parseArgs(json: String): Map<String, Any> = runCatching {
+    private fun parseArgsJson(json: String): Map<String, Any> = runCatching {
         Json.parseToJsonElement(json).jsonObject.entries.associate { (k, v) ->
             k to (if (v is JsonPrimitive) v.content else v.toString())
         }

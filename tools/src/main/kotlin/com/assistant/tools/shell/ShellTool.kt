@@ -1,6 +1,8 @@
 package com.assistant.tools.shell
 
 import com.assistant.domain.*
+import com.assistant.ports.CommandSpec
+import com.assistant.ports.ParamSpec
 import com.assistant.ports.ToolPort
 import java.util.concurrent.TimeUnit
 
@@ -12,6 +14,16 @@ class ShellTool(
     override val description = "Executes shell commands. Commands: shell_run(command)"
 
     private val truncationSuffix = "\n[truncated]"
+
+    override fun commands(): List<CommandSpec> = listOf(
+        CommandSpec(
+            name = "shell_run",
+            description = "Execute a shell command and return its output",
+            params = listOf(
+                ParamSpec("command", "string", "The shell command to execute")
+            )
+        )
+    )
 
     override suspend fun execute(call: ToolCall): Observation {
         if (call.name != "shell_run") return Observation.Error("Unknown shell command: ${call.name}")
