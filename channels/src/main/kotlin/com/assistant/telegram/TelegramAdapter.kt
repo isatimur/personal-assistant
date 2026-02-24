@@ -140,7 +140,7 @@ class TelegramAdapter(
                 val uptimeStr = if (uptimeMin < 60) "${uptimeMin}m" else "${uptimeMin / 60}h ${uptimeMin % 60}m"
                 bot.sendMessage(
                     ChatId.fromId(chatId),
-                    "📊 Bot status\n" +
+                    "Bot status\n" +
                     "Facts: ${stats.factsCount}\n" +
                     "Chunks: ${stats.chunkCount}\n" +
                     "Messages: ${stats.messageCount}\n" +

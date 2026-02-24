@@ -3,6 +3,7 @@ package com.assistant.telegram
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
 import com.assistant.ports.MemoryPort
+import com.assistant.ports.MemoryStats
 import com.github.kotlintelegrambot.Bot
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
@@ -312,6 +313,26 @@ class TelegramAdapterTest {
         assertTrue(result)
         verify { bot.sendMessage(any(), match { it.contains("timezone") && it.contains("Europe/London") }) }
         assertTrue(File(workspaceDir, "USER.md").readText().contains("timezone: Europe/London"))
+    }
+
+    // ── /status ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `status command sends formatted message with stats`() = runTest {
+        val bot = mockk<Bot>(relaxed = true)
+        val memory = mockk<MemoryPort>(relaxed = true)
+        val stats = MemoryStats(factsCount = 5, chunkCount = 100, messageCount = 42)
+        coEvery { memory.stats(any()) } returns stats
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = memory)
+
+        adapter.handleCommand(bot, 1L, "/status")
+
+        verify { bot.sendMessage(any(), match { msg ->
+            msg.contains("Facts: 5") &&
+            msg.contains("Chunks: 100") &&
+            msg.contains("Messages: 42") &&
+            msg.contains("Bot status")
+        }) }
     }
 
     // ── buildStreamChunks ─────────────────────────────────────────────────────
