@@ -110,6 +110,20 @@ class AgentEngineTest {
     }
 
     @Test
+    fun `compaction failure does not fail the request`() = runTest {
+        val compaction = mockk<CompactionService>()
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))
+        coEvery { llm.complete(any()) } returns "FINAL: Hello!"
+        coEvery { memory.append(any(), any()) } just runs
+        coEvery { compaction.maybeCompact(any(), any()) } throws RuntimeException("LLM unavailable")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, compactionService = compaction)
+        val result = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+
+        assertEquals("Hello!", result)  // request succeeds despite compaction failure
+    }
+
+    @Test
     fun `compaction is called before context build`() = runTest {
         val compaction = mockk<CompactionService>()
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "hi"))

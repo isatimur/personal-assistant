@@ -232,6 +232,26 @@ class SqliteMemoryStoreTest {
     }
 
     @Test
+    fun `trimHistory also removes chunks for trimmed messages`() = runTest {
+        val dir = createTempDir("trim-chunks")
+        val store = SqliteMemoryStore(":memory:", memoryDir = dir).also { it.init() }
+        // Append 5 messages — each generates at least one chunk
+        repeat(5) { i -> store.append("s1", Message("user", "message content $i", Channel.TELEGRAM)) }
+        val statsBefore = store.stats("user")
+        assertTrue(statsBefore.chunkCount >= 5)
+        // Trim 3 oldest messages
+        store.trimHistory("s1", deleteCount = 3)
+        // Messages count should drop
+        val remaining = store.history("s1", limit = 10)
+        assertEquals(2, remaining.size)
+        // Chunk count should also drop
+        val statsAfter = store.stats("user")
+        assertTrue(statsAfter.chunkCount < statsBefore.chunkCount,
+            "Expected fewer chunks after trim: before=${statsBefore.chunkCount}, after=${statsAfter.chunkCount}")
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun `trimHistory deletes all messages when deleteCount exceeds history size`() = runTest {
         val store = SqliteMemoryStore(":memory:").also { it.init() }
         store.append("trim-noop", Message("user", "only", Channel.TELEGRAM))

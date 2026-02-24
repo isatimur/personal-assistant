@@ -186,15 +186,18 @@ class SqliteMemoryStore(
         if (deleteCount <= 0) return
         withContext(Dispatchers.IO) {
             transaction(db) {
-                val oldestIds = Messages
+                val oldest = Messages
                     .selectAll()
                     .where { Messages.sessionId eq sessionId }
                     .orderBy(Messages.createdAt, SortOrder.ASC)
                     .limit(deleteCount)
-                    .map { it[Messages.id].value }
-                if (oldestIds.isNotEmpty()) {
-                    Messages.deleteWhere { with(it) { Messages.id inList oldestIds } }
-                }
+                    .toList()
+                if (oldest.isEmpty()) return@transaction
+                val maxCreatedAt = oldest.maxOf { it[Messages.createdAt] }
+                Messages.deleteWhere { with(it) { Messages.id inList oldest.map { row -> row[Messages.id].value } } }
+                Chunks.deleteWhere { with(it) {
+                    (Chunks.sessionId eq sessionId) and (Chunks.createdAt lessEq maxCreatedAt)
+                } }
             }
         }
     }
