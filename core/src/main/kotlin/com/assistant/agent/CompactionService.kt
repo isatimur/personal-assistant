@@ -24,12 +24,15 @@ class CompactionService(
             )
         )
 
-        val summary = llm.complete(prompt)
-        val facts = summary.lines()
-            .map { it.trimStart('-', ' ') }
-            .filter { it.isNotBlank() }
-
-        facts.forEach { memory.saveFact(userId, it) }
-        memory.trimHistory(sessionId, compactCount)
+        try {
+            val summary = llm.complete(prompt)
+            val facts = summary.lines()
+                .filter { it.startsWith("- ") }
+                .map { it.removePrefix("- ").trim() }
+                .filter { it.isNotBlank() }
+            facts.forEach { memory.saveFact(userId, it) }
+        } finally {
+            memory.trimHistory(sessionId, compactCount)
+        }
     }
 }
