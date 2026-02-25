@@ -6,7 +6,7 @@ llm:
   provider: anthropic    # openai | anthropic | ollama
   model: claude-sonnet-4-6
   api-key: "PLACEHOLDER"  # overridden by secrets.yml
-  # openai fallback: provider: openai, model: gpt-5-nano-2025-08-07
+  # to revert to OpenAI: set provider: openai, model: gpt-5-nano-2025-08-07
 
 memory:
   db-path: ~/.assistant/memory.db
@@ -53,8 +53,8 @@ tools:
     api-key: ""
 
 voice:
-  enabled: true
-  api-key: ""   # must set a separate OpenAI key here for Whisper — cannot share the Anthropic llm.api-key
+  enabled: false  # set to true once you add an OpenAI api-key below (Whisper requires OpenAI, not Anthropic)
+  api-key: ""     # set your OpenAI key here (in secrets.yml under voice.api-key)
 
 heartbeat:
   enabled: true
