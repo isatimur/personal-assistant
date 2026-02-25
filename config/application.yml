@@ -58,8 +58,5 @@ voice:
 
 heartbeat:
   enabled: true
-  every: "1h"
-  time: null
-  prompt: "Briefly check in: what are my top 3 priorities right now, what's my first 15-minute action, and one question to keep me on track."
-  # cron: "0 6 * * 1-5"   # weekdays 6am
-  # agents: []
+  cron: "0 8 * * 1-5"   # weekdays 8am Lisbon time
+  prompt: "Good morning Tim. One sentence: what's the single most important thing to move forward today?"
