@@ -43,6 +43,18 @@ tools:
   github:
     enabled: false
     token: ""
+  jira:
+    enabled: false
+    base-url: ""   # e.g. https://yourcompany.atlassian.net
+    email: ""
+    api-token: ""
+  linear:
+    enabled: false
+    api-key: ""
+
+voice:
+  enabled: false
+  api-key: ""   # leave blank to fall back to llm.api-key (works when provider=openai)
 
 heartbeat:
   enabled: true

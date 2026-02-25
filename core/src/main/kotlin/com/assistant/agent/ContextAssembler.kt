@@ -103,7 +103,7 @@ class ContextAssembler(
             ctx.history.forEach { msg ->
                 add(ChatMessage(if (msg.sender == session.userId) "user" else "assistant", msg.text))
             }
-            add(ChatMessage("user", currentMessage.text))
+            add(ChatMessage("user", currentMessage.text, currentMessage.imageUrl))
         }
     }
 }

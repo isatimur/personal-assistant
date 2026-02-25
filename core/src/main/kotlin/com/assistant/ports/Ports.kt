@@ -4,7 +4,7 @@ import com.assistant.domain.*
 
 data class MemoryStats(val factsCount: Int, val chunkCount: Int, val messageCount: Int)
 
-data class ChatMessage(val role: String, val content: String)
+data class ChatMessage(val role: String, val content: String, val imageUrl: String? = null)
 
 data class ParamSpec(
     val name: String,

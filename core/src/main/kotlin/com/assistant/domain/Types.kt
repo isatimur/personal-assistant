@@ -6,7 +6,8 @@ data class Message(
     val sender: String,
     val text: String,
     val channel: Channel,
-    val attachments: List<String> = emptyList()
+    val attachments: List<String> = emptyList(),
+    val imageUrl: String? = null
 )
 
 data class Session(val id: String, val userId: String, val channel: Channel)
