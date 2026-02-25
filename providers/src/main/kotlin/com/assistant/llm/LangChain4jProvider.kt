@@ -8,7 +8,9 @@ import com.assistant.ports.TokenUsage
 import dev.langchain4j.agent.tool.ToolParameters
 import dev.langchain4j.agent.tool.ToolSpecification
 import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ImageContent
 import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.TextContent
 import dev.langchain4j.data.message.UserMessage
 import dev.langchain4j.model.anthropic.AnthropicChatModel
 import dev.langchain4j.model.chat.ChatLanguageModel
@@ -77,7 +79,17 @@ class LangChain4jProvider(private val config: ModelConfig) : LlmPort {
             when (msg.role) {
                 "system" -> SystemMessage.from(msg.content)
                 "assistant" -> AiMessage.from(msg.content)
-                else -> UserMessage.from(msg.content)
+                else -> {
+                    val imgUrl = msg.imageUrl
+                    if (imgUrl != null) {
+                        UserMessage.from(
+                            ImageContent.from(imgUrl),
+                            TextContent.from(msg.content)
+                        )
+                    } else {
+                        UserMessage.from(msg.content)
+                    }
+                }
             }
         }
 }

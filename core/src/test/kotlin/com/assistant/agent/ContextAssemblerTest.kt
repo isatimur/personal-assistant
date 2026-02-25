@@ -193,4 +193,36 @@ class ContextAssemblerTest {
 
         assertFalse(system.contains("Active Agent:"), "No profile should be injected for non-matching message")
     }
+
+    @Test
+    fun `imageUrl from Message is propagated to last ChatMessage`() = runTest {
+        emptyMemory()
+        every { registry.describe() } returns ""
+
+        val assembler = ContextAssembler(memory, registry, 10)
+        val imageUrl = "https://api.telegram.org/file/bot123/photos/photo.jpg"
+        val messages = assembler.build(
+            Session("s1", "user1", Channel.TELEGRAM),
+            Message("user1", "describe this image", Channel.TELEGRAM, imageUrl = imageUrl)
+        )
+
+        val lastMsg = messages.last()
+        assertEquals("user", lastMsg.role)
+        assertEquals("describe this image", lastMsg.content)
+        assertEquals(imageUrl, lastMsg.imageUrl)
+    }
+
+    @Test
+    fun `imageUrl is null when not provided in Message`() = runTest {
+        emptyMemory()
+        every { registry.describe() } returns ""
+
+        val assembler = ContextAssembler(memory, registry, 10)
+        val messages = assembler.build(
+            Session("s1", "user1", Channel.TELEGRAM),
+            Message("user1", "hello", Channel.TELEGRAM)
+        )
+
+        assertNull(messages.last().imageUrl)
+    }
 }

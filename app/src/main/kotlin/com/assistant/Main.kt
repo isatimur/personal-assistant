@@ -16,6 +16,8 @@ import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
 import com.assistant.tools.filesystem.FileSystemTool
 import com.assistant.tools.github.GitHubTool
+import com.assistant.tools.jira.JiraTool
+import com.assistant.tools.linear.LinearTool
 import com.assistant.tools.shell.ShellTool
 import com.assistant.tools.web.WebBrowserTool
 import com.assistant.workspace.WorkspaceLoader
@@ -51,6 +53,12 @@ fun main() {
         if (config.tools.github.enabled) {
             add(GitHubTool(config.tools.github.token))
         }
+        if (config.tools.jira.enabled) {
+            add(JiraTool(config.tools.jira.baseUrl, config.tools.jira.email, config.tools.jira.apiToken))
+        }
+        if (config.tools.linear.enabled) {
+            add(LinearTool(config.tools.linear.apiKey))
+        }
     }
 
     val workspace = WorkspaceLoader()
@@ -61,13 +69,18 @@ fun main() {
     val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker)
     val gateway = Gateway(engine)
 
+    val voiceApiKey = if (config.voice.apiKey.isNotBlank()) config.voice.apiKey
+                      else config.llm.apiKey ?: ""
+
     val telegram = TelegramAdapter(
         config.telegram.token,
         gateway,
         memory,
         config.telegram.timeoutMs,
         modelName = config.llm.model,
-        tokenTracker = tokenTracker
+        tokenTracker = tokenTracker,
+        voiceEnabled = config.voice.enabled,
+        voiceApiKey = voiceApiKey
     )
 
     val reminderManager = ReminderManager(
