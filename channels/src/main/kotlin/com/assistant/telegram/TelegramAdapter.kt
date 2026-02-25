@@ -22,8 +22,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 
 class TelegramAdapter(
@@ -35,7 +45,9 @@ class TelegramAdapter(
     private val workspaceDir: File = File(System.getProperty("user.home"), ".assistant"),
     private val modelName: String = "",
     private val startTime: Long = System.currentTimeMillis(),
-    private val tokenTracker: TokenTracker? = null
+    private val tokenTracker: TokenTracker? = null,
+    private val voiceEnabled: Boolean = false,
+    private val voiceApiKey: String = ""
 ) {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -44,6 +56,13 @@ class TelegramAdapter(
     private val onboarding = OnboardingManager(memory, workspaceDir)
     private val workspaceLoader = WorkspaceLoader(workspaceDir)
     var reminderManager: ReminderManager? = null
+
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
 
     fun normalize(senderId: String, text: String): Message =
         Message(sender = senderId, text = text, channel = Channel.TELEGRAM)
@@ -58,6 +77,52 @@ class TelegramAdapter(
     fun sendProactive(chatId: Long, text: String) {
         telegramBot?.sendMessage(ChatId.fromId(chatId), text)
     }
+
+    /** Downloads a Telegram voice file and transcribes it via Whisper. Returns null on failure. */
+    internal suspend fun transcribeVoice(bot: Bot, fileId: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val (fileResp, _) = bot.getFile(fileId)
+                val filePath = fileResp?.body()?.result?.filePath ?: return@withContext null
+                val fileUrl = "https://api.telegram.org/file/bot$token/$filePath"
+
+                // Download audio bytes
+                val downloadReq = Request.Builder().url(fileUrl).build()
+                val audioBytes = httpClient.newCall(downloadReq).execute().use { resp ->
+                    if (!resp.isSuccessful) return@withContext null
+                    resp.body?.bytes() ?: return@withContext null
+                }
+
+                // POST to Whisper
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart(
+                        "file", "audio.ogg",
+                        audioBytes.toRequestBody("audio/ogg".toMediaType())
+                    )
+                    .addFormDataPart("model", "whisper-1")
+                    .build()
+
+                val whisperReq = Request.Builder()
+                    .url("https://api.openai.com/v1/audio/transcriptions")
+                    .header("Authorization", "Bearer $voiceApiKey")
+                    .post(requestBody)
+                    .build()
+
+                val responseText = httpClient.newCall(whisperReq).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        logger.warning("Whisper API error: ${resp.code} ${resp.message}")
+                        return@withContext null
+                    }
+                    resp.body?.string() ?: return@withContext null
+                }
+
+                Json.parseToJsonElement(responseText).jsonObject["text"]?.jsonPrimitive?.content
+            } catch (e: Exception) {
+                logger.warning("transcribeVoice failed: ${e.message}")
+                null
+            }
+        }
 
     internal suspend fun handleCommand(bot: Bot, chatId: Long, text: String): Boolean {
         if (!text.startsWith("/")) return false
@@ -178,6 +243,37 @@ class TelegramAdapter(
         return true
     }
 
+    /** Runs the LLM pipeline for a fully-formed Message and streams the response. */
+    internal suspend fun handleProcessedMessage(bot: Bot, chatId: Long, msg: Message) {
+        val typingJob = scope.launch {
+            while (isActive) {
+                telegramBot?.sendChatAction(ChatId.fromId(chatId), ChatAction.TYPING)
+                delay(4_000)
+            }
+        }
+        try {
+            semaphore.withPermit {
+                try {
+                    val response = withTimeout(this@TelegramAdapter.timeoutMs) {
+                        gateway.handle(msg) { progressMsg ->
+                            scope.launch { bot.sendMessage(ChatId.fromId(chatId), progressMsg) }
+                        }
+                    }
+                    typingJob.cancel()
+                    streamToChat(bot, chatId, response)
+                } catch (e: TimeoutCancellationException) {
+                    logger.severe("Request timed out for chat $chatId")
+                    bot.sendMessage(ChatId.fromId(chatId), "Request timed out. Please try again.")
+                } catch (e: Exception) {
+                    logger.severe("handle failed for chat $chatId: ${e.message}")
+                    bot.sendMessage(ChatId.fromId(chatId), "Something went wrong. Try again.")
+                }
+            }
+        } finally {
+            typingJob.cancel()
+        }
+    }
+
     /** Splits text into progressively longer strings for a "live typing" effect. */
     internal fun buildStreamChunks(text: String, chunkSize: Int = 40): List<String> {
         if (text.length <= chunkSize) return listOf(text)
@@ -214,52 +310,56 @@ class TelegramAdapter(
     }
 
     fun start() {
+        val voiceFilter = Filter.Custom { voice != null }
         telegramBot = bot {
             this.token = this@TelegramAdapter.token
             dispatch {
-                message(Filter.Text or Filter.Command) {
+                message(Filter.Text or Filter.Command or Filter.Photo or voiceFilter) {
                     val chatId = message.chat.id
-                    val text = message.text ?: return@message
                     scope.launch {
                         writeChatId(chatId)
-                        // 1. Active wizard step (non-command messages only)
+
+                        // 1. Voice message
+                        val voice = message.voice
+                        if (voice != null) {
+                            if (!voiceEnabled || voiceApiKey.isBlank()) {
+                                bot.sendMessage(ChatId.fromId(chatId), "Voice input is not enabled.")
+                                return@launch
+                            }
+                            val transcript = transcribeVoice(bot, voice.fileId)
+                            if (transcript == null) {
+                                bot.sendMessage(ChatId.fromId(chatId), "Sorry, I couldn't transcribe that audio.")
+                                return@launch
+                            }
+                            handleProcessedMessage(bot, chatId, normalize(chatId.toString(), transcript))
+                            return@launch
+                        }
+
+                        // 2. Photo message
+                        val photos = message.photo
+                        if (!photos.isNullOrEmpty()) {
+                            val photo = photos.maxByOrNull { ps -> ps.fileSize ?: 0 }!!
+                            val (fileResp, _) = bot.getFile(photo.fileId)
+                            val filePath = fileResp?.body()?.result?.filePath
+                            if (filePath == null) {
+                                bot.sendMessage(ChatId.fromId(chatId), "Could not retrieve the image.")
+                                return@launch
+                            }
+                            val photoUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                            val caption = message.caption ?: "What's in this image?"
+                            val imgMsg = normalize(chatId.toString(), caption).copy(imageUrl = photoUrl)
+                            handleProcessedMessage(bot, chatId, imgMsg)
+                            return@launch
+                        }
+
+                        // 3. Text / command message
+                        val text = message.text ?: return@launch
                         if (!text.startsWith("/") && onboarding.isActive(chatId)) {
                             onboarding.handle(bot, chatId, text)
                             return@launch
                         }
-                        // 2. Commands
                         if (handleCommand(bot, chatId, text)) return@launch
-                        // 3. Regular LLM message
-                        val normalizedMsg = normalize(chatId.toString(), text)
-                        val typingJob = launch {
-                            while (isActive) {
-                                telegramBot?.sendChatAction(ChatId.fromId(chatId), ChatAction.TYPING)
-                                delay(4_000)
-                            }
-                        }
-                        try {
-                            semaphore.withPermit {
-                                try {
-                                    val response = withTimeout(this@TelegramAdapter.timeoutMs) {
-                                        gateway.handle(normalizedMsg) { progressMsg ->
-                                            scope.launch {
-                                                bot.sendMessage(ChatId.fromId(chatId), progressMsg)
-                                            }
-                                        }
-                                    }
-                                    typingJob.cancel()
-                                    streamToChat(bot, chatId, response)
-                                } catch (e: TimeoutCancellationException) {
-                                    logger.severe("Request timed out for chat $chatId")
-                                    bot.sendMessage(ChatId.fromId(chatId), "Request timed out. Please try again.")
-                                } catch (e: Exception) {
-                                    logger.severe("handle failed for chat $chatId: ${e.message}")
-                                    bot.sendMessage(ChatId.fromId(chatId), "Something went wrong. Try again.")
-                                }
-                            }
-                        } finally {
-                            typingJob.cancel()
-                        }
+                        handleProcessedMessage(bot, chatId, normalize(chatId.toString(), text))
                     }
                 }
             }
