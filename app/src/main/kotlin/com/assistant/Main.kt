@@ -1,6 +1,8 @@
 package com.assistant
 
 import com.assistant.agent.*
+import com.assistant.domain.Channel
+import com.assistant.domain.Message
 import com.assistant.gateway.Gateway
 import com.assistant.heartbeat.HeartbeatAgent
 import com.assistant.heartbeat.HeartbeatConfig
@@ -107,7 +109,9 @@ fun main() {
     )
 
     println("Personal assistant starting... Send a message on Telegram!")
-    telegram.start()
+    telegram.start { sessionId, userId, text, imageUrl ->
+        gateway.handle(Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl))
+    }
     heartbeat.start()
 
     val mainScope = CoroutineScope(Dispatchers.Default)
