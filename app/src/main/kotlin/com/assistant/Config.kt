@@ -17,7 +17,7 @@ import java.io.File
 @Serializable data class VoiceConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
 @Serializable data class ToolsConfig(val shell: ShellConfig = ShellConfig(), val web: WebConfig = WebConfig(), val email: EmailToolConfig = EmailToolConfig(), val filesystem: FileSystemConfig = FileSystemConfig(), val github: GitHubConfig = GitHubConfig(), val jira: JiraConfig = JiraConfig(), val linear: LinearConfig = LinearConfig())
 @Serializable data class ShellConfig(@SerialName("timeout-seconds") val timeoutSeconds: Long = 30, @SerialName("max-output-chars") val maxOutputChars: Int = 10_000)
-@Serializable data class WebConfig(@SerialName("max-content-chars") val maxContentChars: Int = 8_000)
+@Serializable data class WebConfig(@SerialName("max-content-chars") val maxContentChars: Int = 8_000, @SerialName("search-provider") val searchProvider: String = "duckduckgo", @SerialName("search-api-key") val searchApiKey: String = "")
 @Serializable data class EmailToolConfig(val enabled: Boolean = false, @SerialName("imap-host") val imapHost: String = "", @SerialName("imap-port") val imapPort: Int = 993, @SerialName("smtp-host") val smtpHost: String = "", @SerialName("smtp-port") val smtpPort: Int = 587, val username: String = "", val password: String = "")
 @Serializable data class FileSystemConfig(@SerialName("allowed-paths") val allowedPaths: List<String> = listOf("~"))
 @Serializable data class HeartbeatConfig(val enabled: Boolean = false, val every: String = "1h", val time: String? = null, val cron: String? = null, val agents: List<HeartbeatAgentConfig> = emptyList(), val prompt: String = "Check if there's anything proactive you should do.")
@@ -32,7 +32,8 @@ import java.io.File
 @Serializable data class JiraSecrets(val email: String? = null, @SerialName("api-token") val apiToken: String? = null)
 @Serializable data class LinearSecrets(@SerialName("api-key") val apiKey: String? = null)
 @Serializable data class VoiceSecrets(@SerialName("api-key") val apiKey: String? = null)
-@Serializable data class ToolsSecrets(val email: EmailSecrets? = null, val github: GitHubSecrets? = null, val jira: JiraSecrets? = null, val linear: LinearSecrets? = null)
+@Serializable data class WebSecrets(@SerialName("search-api-key") val searchApiKey: String? = null)
+@Serializable data class ToolsSecrets(val email: EmailSecrets? = null, val github: GitHubSecrets? = null, val jira: JiraSecrets? = null, val linear: LinearSecrets? = null, val web: WebSecrets? = null)
 @Serializable data class SecretsConfig(
     val telegram: TelegramSecrets? = null,
     val llm: LlmSecrets? = null,
@@ -73,6 +74,9 @@ fun loadConfig(basePath: String = "config/application.yml", secretsPath: String 
             }
             if (secrets.tools?.linear?.apiKey != null) {
                 t = t.copy(linear = t.linear.copy(apiKey = secrets.tools.linear.apiKey))
+            }
+            if (secrets.tools?.web?.searchApiKey != null) {
+                t = t.copy(web = t.web.copy(searchApiKey = secrets.tools.web.searchApiKey))
             }
             t
         }

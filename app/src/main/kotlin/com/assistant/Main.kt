@@ -47,7 +47,11 @@ fun main() {
     val tools = buildList {
         add(FileSystemTool(config.tools.filesystem.allowedPaths))
         add(ShellTool(config.tools.shell.timeoutSeconds, config.tools.shell.maxOutputChars))
-        add(WebBrowserTool(config.tools.web.maxContentChars))
+        add(WebBrowserTool(
+            maxContentChars = config.tools.web.maxContentChars,
+            searchProvider = config.tools.web.searchProvider,
+            searchApiKey = config.tools.web.searchApiKey
+        ))
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,
                 config.tools.email.smtpHost, config.tools.email.smtpPort,
