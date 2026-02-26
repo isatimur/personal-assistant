@@ -68,9 +68,14 @@ class HttpTool : ToolPort {
         val headersJson = call.arguments["headers"] as? String
         val body = call.arguments["body"] as? String
 
+        if (call.name in listOf("http_post", "http_put") && body == null) {
+            return Observation.Error("Missing required parameter: body")
+        }
+
         return runCatching {
             val reqBuilder = Request.Builder().url(url)
-            applyHeaders(reqBuilder, headersJson)
+            val headerError = applyHeaders(reqBuilder, headersJson)
+            if (headerError != null) return headerError
 
             val request = when (call.name) {
                 "http_get" -> reqBuilder.get().build()
@@ -80,19 +85,21 @@ class HttpTool : ToolPort {
                 else -> return Observation.Error("Unknown http command: ${call.name}")
             }
 
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-            val status = response.code
-            Observation.Success("HTTP $status\n$responseBody")
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                Observation.Success("HTTP ${response.code}\n$responseBody")
+            }
         }.getOrElse { Observation.Error(it.message ?: "HTTP request failed") }
     }
 
-    private fun applyHeaders(builder: Request.Builder, headersJson: String?) {
-        if (headersJson.isNullOrBlank()) return
-        runCatching {
-            val obj = json.parseToJsonElement(headersJson) as? JsonObject ?: return
+    private fun applyHeaders(builder: Request.Builder, headersJson: String?): Observation.Error? {
+        if (headersJson.isNullOrBlank()) return null
+        return runCatching {
+            val obj = json.parseToJsonElement(headersJson) as? JsonObject
+                ?: return Observation.Error("headers must be a JSON object")
             obj.forEach { (key, value) -> builder.header(key, value.jsonPrimitive.content) }
-        }
+            null
+        }.getOrElse { Observation.Error("Invalid headers JSON: ${it.message}") }
     }
 
     private fun contentType(headersJson: String?): okhttp3.MediaType {
