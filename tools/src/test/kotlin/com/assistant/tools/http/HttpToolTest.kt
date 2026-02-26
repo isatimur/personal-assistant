@@ -15,14 +15,16 @@ class HttpToolTest {
         val server = MockWebServer()
         server.enqueue(MockResponse().setBody("Hello from server").setResponseCode(200))
         server.start()
-
-        val tool = HttpTool()
-        val result = runBlocking {
-            tool.execute(ToolCall(name = "http_get", arguments = mapOf("url" to server.url("/test").toString())))
+        try {
+            val tool = HttpTool()
+            val result = runBlocking {
+                tool.execute(ToolCall(name = "http_get", arguments = mapOf("url" to server.url("/test").toString())))
+            }
+            assertTrue(result is Observation.Success)
+            assertTrue((result as Observation.Success).result.contains("Hello from server"))
+        } finally {
+            server.shutdown()
         }
-        assertTrue(result is Observation.Success)
-        assertTrue((result as Observation.Success).result.contains("Hello from server"))
-        server.shutdown()
     }
 
     @Test
@@ -30,19 +32,21 @@ class HttpToolTest {
         val server = MockWebServer()
         server.enqueue(MockResponse().setBody("""{"status":"ok"}""").setResponseCode(201))
         server.start()
-
-        val tool = HttpTool()
-        val result = runBlocking {
-            tool.execute(ToolCall(name = "http_post", arguments = mapOf(
-                "url" to server.url("/api").toString(),
-                "body" to """{"name":"test"}"""
-            )))
+        try {
+            val tool = HttpTool()
+            val result = runBlocking {
+                tool.execute(ToolCall(name = "http_post", arguments = mapOf(
+                    "url" to server.url("/api").toString(),
+                    "body" to """{"name":"test"}"""
+                )))
+            }
+            assertTrue(result is Observation.Success)
+            val recorded = server.takeRequest()
+            assertEquals("POST", recorded.method)
+            assertTrue(recorded.body.readUtf8().contains("name"))
+        } finally {
+            server.shutdown()
         }
-        assertTrue(result is Observation.Success)
-        val recorded = server.takeRequest()
-        assertEquals("POST", recorded.method)
-        assertTrue(recorded.body.readUtf8().contains("name"))
-        server.shutdown()
     }
 
     @Test

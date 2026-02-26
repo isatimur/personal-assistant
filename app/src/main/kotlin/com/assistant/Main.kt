@@ -53,7 +53,9 @@ fun main() {
             searchProvider = config.tools.web.searchProvider,
             searchApiKey = config.tools.web.searchApiKey
         ))
-        add(HttpTool())
+        if (config.tools.http.enabled) {
+            add(HttpTool())
+        }
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,
                 config.tools.email.smtpHost, config.tools.email.smtpPort,
