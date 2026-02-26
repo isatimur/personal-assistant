@@ -48,4 +48,16 @@ class LangChain4jProviderTest {
         val config = ModelConfig(provider = "anthropic", model = "claude-opus-4-6", apiKey = "test-key", baseUrl = null)
         assertNotNull(LangChain4jProvider(config))
     }
+
+    @Test
+    fun `LangChain4jProvider constructs with fast model configured`() {
+        val config = ModelConfig(
+            provider = "anthropic",
+            model = "claude-sonnet-4-6",
+            apiKey = "test-key",
+            baseUrl = null,
+            fastModel = "claude-haiku-4-5-20251001"
+        )
+        assertDoesNotThrow { LangChain4jProvider(config) }
+    }
 }

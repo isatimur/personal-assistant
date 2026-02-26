@@ -29,10 +29,18 @@ class AgentEngine(
         val context = assembler.build(session, message).toMutableList()
         val commands = toolRegistry.allCommands()
 
+        var toolCallsMade = false
         repeat(maxSteps) {
-            val completion = llm.completeWithFunctions(context, commands)
+            // Use the fast model for tool-selection steps; once all tools have been called,
+            // use the standard model to produce the final response.
+            val completion = if (toolCallsMade) {
+                llm.completeWithFunctions(context, commands)
+            } else {
+                llm.completeWithFunctionsFast(context, commands)
+            }
             when (completion) {
                 is FunctionCompletion.FunctionCall -> {
+                    toolCallsMade = true
                     tokenTracker?.record(session.id, completion.usage)
                     onProgress?.invoke("Using ${completion.name}...")
                     val args = parseArgsJson(completion.argsJson)
