@@ -30,6 +30,8 @@ tools:
     max-output-chars: 10000
   web:
     max-content-chars: 8000
+    search-provider: duckduckgo
+    search-api-key: ""
   filesystem:
     allowed-paths:
       - "~"
