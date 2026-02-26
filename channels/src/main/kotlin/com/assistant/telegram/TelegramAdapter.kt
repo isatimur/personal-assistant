@@ -3,6 +3,7 @@ package com.assistant.telegram
 import com.assistant.agent.TokenTracker
 import com.assistant.domain.*
 import com.assistant.gateway.Gateway
+import com.assistant.ports.ChannelPort
 import com.assistant.ports.MemoryPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.reminder.parseReminderDuration
@@ -48,8 +49,10 @@ class TelegramAdapter(
     private val tokenTracker: TokenTracker? = null,
     private val voiceEnabled: Boolean = false,
     private val voiceApiKey: String = ""
-) {
+) : ChannelPort {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
+    override val name = "telegram"
+    private var messageHandler: (suspend (String, String, String, String?) -> String)? = null
     private val scope = CoroutineScope(Dispatchers.IO)
     private val semaphore = Semaphore(4)
     private var telegramBot: Bot? = null
@@ -309,7 +312,17 @@ class TelegramAdapter(
         }
     }
 
-    fun start() {
+    override fun start(onMessage: suspend (sessionId: String, userId: String, text: String, imageUrl: String?) -> String) {
+        messageHandler = onMessage
+        startPolling()
+    }
+
+    override fun send(sessionId: String, text: String) {
+        val chatId = sessionId.removePrefix("TELEGRAM:").toLongOrNull() ?: return
+        sendProactive(chatId, text)
+    }
+
+    private fun startPolling() {
         val voiceFilter = Filter.Custom { voice != null }
         telegramBot = bot {
             this.token = this@TelegramAdapter.token

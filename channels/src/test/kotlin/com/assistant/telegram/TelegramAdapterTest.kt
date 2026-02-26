@@ -353,4 +353,25 @@ class TelegramAdapterTest {
         assertEquals(1, result.size)
         assertEquals("Hi", result[0])
     }
+
+    // ── ChannelPort ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `name returns telegram`() {
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk())
+        assertEquals("telegram", adapter.name)
+    }
+
+    @Test
+    fun `send parses sessionId and calls sendProactive`() {
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk())
+        // sendProactive is a no-op when telegramBot is null — just must not throw
+        assertDoesNotThrow { adapter.send("TELEGRAM:99887766", "hello") }
+    }
+
+    @Test
+    fun `send with malformed sessionId does nothing`() {
+        val adapter = TelegramAdapter(token = "fake", gateway = mockk(), memory = mockk())
+        assertDoesNotThrow { adapter.send("BAD_FORMAT", "hello") }
+    }
 }
