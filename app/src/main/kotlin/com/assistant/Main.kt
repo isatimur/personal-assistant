@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 
 fun main() {
     val config = loadConfig(secretsPath = "config/secrets.yml")
+    val pluginLoader = PluginLoader()
 
     val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
     File(dbPath).parentFile.mkdirs()
@@ -61,6 +62,7 @@ fun main() {
         if (config.tools.linear.enabled) {
             add(LinearTool(config.tools.linear.apiKey))
         }
+        addAll(pluginLoader.loadTools())
     }
 
     val workspace = WorkspaceLoader()
@@ -91,6 +93,15 @@ fun main() {
     )
     telegram.reminderManager = reminderManager
     reminderManager.loadAndReschedule()
+
+    val pluginChannels = pluginLoader.loadChannels()
+    pluginChannels.forEach { channel ->
+        channel.start { _, userId, text, imageUrl ->
+            val msg = Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl)
+            gateway.handle(msg)
+        }
+        println("Plugin channel started: ${channel.name}")
+    }
 
     val heartbeat = HeartbeatRunner(
         config = HeartbeatConfig(

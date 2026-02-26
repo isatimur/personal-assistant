@@ -27,6 +27,6 @@ class PluginLoader(
 
     private fun <T> load(type: Class<T>): List<T> =
         ServiceLoader.load(type, classLoader).toList().also { plugins ->
-            plugins.forEach { logger.info("Loaded plugin: ${type.simpleName}/${it::class.simpleName}") }
+            plugins.forEach { logger.info("Loaded plugin: ${type.simpleName}/${it!!::class.simpleName}") }
         }
 }
