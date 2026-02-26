@@ -6,6 +6,7 @@ llm:
   provider: anthropic    # openai | anthropic | ollama
   model: claude-sonnet-4-6
   api-key: "PLACEHOLDER"  # overridden by secrets.yml
+  fast-model: claude-haiku-4-5-20251001  # cheap model for tool-selection steps
   # to revert to OpenAI: set provider: openai, model: gpt-5-nano-2025-08-07
 
 memory:

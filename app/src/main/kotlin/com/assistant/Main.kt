@@ -42,7 +42,7 @@ fun main() {
     }
     val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
 
-    val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl))
+    val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl, config.llm.fastModel))
 
     val tools = buildList {
         add(FileSystemTool(config.tools.filesystem.allowedPaths))

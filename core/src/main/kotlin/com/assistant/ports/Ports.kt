@@ -29,6 +29,9 @@ sealed class FunctionCompletion {
 interface LlmPort {
     suspend fun complete(messages: List<ChatMessage>): String
     suspend fun completeWithFunctions(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion
+    /** Uses a faster/cheaper model for tool-selection steps. Defaults to the standard model. */
+    suspend fun completeWithFunctionsFast(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion =
+        completeWithFunctions(messages, commands)
 }
 
 interface ToolPort {
