@@ -21,6 +21,7 @@ import com.assistant.tools.github.GitHubTool
 import com.assistant.tools.jira.JiraTool
 import com.assistant.tools.linear.LinearTool
 import com.assistant.tools.shell.ShellTool
+import com.assistant.tools.http.HttpTool
 import com.assistant.tools.web.WebBrowserTool
 import com.assistant.workspace.WorkspaceLoader
 import java.io.File
@@ -52,6 +53,7 @@ fun main() {
             searchProvider = config.tools.web.searchProvider,
             searchApiKey = config.tools.web.searchApiKey
         ))
+        add(HttpTool())
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,
                 config.tools.email.smtpHost, config.tools.email.smtpPort,
