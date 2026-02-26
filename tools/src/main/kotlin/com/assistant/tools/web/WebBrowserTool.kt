@@ -19,6 +19,9 @@ class WebBrowserTool(
     private val searchApiKey: String = "",
     private val searchBaseUrl: String = "https://api.search.brave.com"
 ) : ToolPort {
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+    }
     override val name = "web"
     override val description = "Fetches web pages and searches. Commands: web_fetch(url), web_search(query)"
 
@@ -94,7 +97,6 @@ class WebBrowserTool(
             .build()
         val body = client.newCall(req).execute().body?.string()
             ?: return@runCatching Observation.Error("Empty response from Brave")
-        val json = Json { ignoreUnknownKeys = true }
         val root = json.parseToJsonElement(body).jsonObject
         val results = root["web"]?.jsonObject?.get("results")?.jsonArray
             ?: return@runCatching Observation.Error("No results")
@@ -109,7 +111,12 @@ class WebBrowserTool(
     }.getOrElse { Observation.Error(it.message ?: "Brave search failed") }
 
     private fun searchTavily(query: String): Observation = runCatching {
-        val bodyJson = """{"api_key":"$searchApiKey","query":"${query.replace("\"", "\\\"")}","search_depth":"basic","max_results":10}"""
+        val bodyJson = buildJsonObject {
+            put("api_key", searchApiKey)
+            put("query", query)
+            put("search_depth", "basic")
+            put("max_results", 10)
+        }.toString()
         val req = Request.Builder()
             .url("https://api.tavily.com/search")
             .header("Content-Type", "application/json")
@@ -117,7 +124,6 @@ class WebBrowserTool(
             .build()
         val body = client.newCall(req).execute().body?.string()
             ?: return@runCatching Observation.Error("Empty response from Tavily")
-        val json = Json { ignoreUnknownKeys = true }
         val root = json.parseToJsonElement(body).jsonObject
         val results = root["results"]?.jsonArray
             ?: return@runCatching Observation.Error("No results")
