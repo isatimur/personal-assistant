@@ -46,6 +46,17 @@ class LangChain4jProvider(private val config: ModelConfig) : LlmPort {
     override suspend fun completeWithFunctions(
         messages: List<ChatMessage>,
         commands: List<CommandSpec>
+    ): FunctionCompletion = completeWithModel(model, messages, commands)
+
+    override suspend fun completeWithFunctionsFast(
+        messages: List<ChatMessage>,
+        commands: List<CommandSpec>
+    ): FunctionCompletion = completeWithModel(fastLlm ?: model, messages, commands)
+
+    private suspend fun completeWithModel(
+        model: ChatLanguageModel,
+        messages: List<ChatMessage>,
+        commands: List<CommandSpec>
     ): FunctionCompletion {
         val lc4jMessages = messages.toLc4j()
         val specs = commands.map { cmd ->
@@ -68,47 +79,6 @@ class LangChain4jProvider(private val config: ModelConfig) : LlmPort {
         val response = withContext(Dispatchers.IO) {
             if (specs.isEmpty()) model.generate(lc4jMessages)
             else model.generate(lc4jMessages, specs)
-        }
-
-        val usage = response.tokenUsage()?.let {
-            TokenUsage(it.inputTokenCount(), it.outputTokenCount())
-        }
-        val ai = response.content()
-
-        return if (ai.hasToolExecutionRequests()) {
-            val req = ai.toolExecutionRequests().first()
-            FunctionCompletion.FunctionCall(req.name(), req.arguments(), usage)
-        } else {
-            FunctionCompletion.Text(ai.text() ?: "", usage)
-        }
-    }
-
-    override suspend fun completeWithFunctionsFast(
-        messages: List<ChatMessage>,
-        commands: List<CommandSpec>
-    ): FunctionCompletion {
-        val targetModel = fastLlm ?: return completeWithFunctions(messages, commands)
-        val lc4jMessages = messages.toLc4j()
-        val specs = commands.map { cmd ->
-            val props: Map<String, Map<String, Any>> = cmd.params.associate { p ->
-                p.name to mapOf("type" to p.type, "description" to p.description)
-            }
-            val required = cmd.params.filter { it.required }.map { it.name }
-            ToolSpecification.builder()
-                .name(cmd.name)
-                .description(cmd.description)
-                .parameters(
-                    ToolParameters.builder()
-                        .properties(props)
-                        .required(required)
-                        .build()
-                )
-                .build()
-        }
-
-        val response = withContext(Dispatchers.IO) {
-            if (specs.isEmpty()) targetModel.generate(lc4jMessages)
-            else targetModel.generate(lc4jMessages, specs)
         }
 
         val usage = response.tokenUsage()?.let {
