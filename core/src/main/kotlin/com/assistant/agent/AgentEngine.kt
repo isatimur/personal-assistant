@@ -29,10 +29,12 @@ class AgentEngine(
         val context = assembler.build(session, message).toMutableList()
         val commands = toolRegistry.allCommands()
 
+        var toolCallsMade = false
         repeat(maxSteps) {
             val completion = llm.completeWithFunctionsFast(context, commands)
             when (completion) {
                 is FunctionCompletion.FunctionCall -> {
+                    toolCallsMade = true
                     tokenTracker?.record(session.id, completion.usage)
                     onProgress?.invoke("Using ${completion.name}...")
                     val args = parseArgsJson(completion.argsJson)
@@ -45,10 +47,17 @@ class AgentEngine(
                     context.add(ChatMessage("user", obs))
                 }
                 is FunctionCompletion.Text -> {
-                    tokenTracker?.record(session.id, completion.usage)
-                    val answer = completion.content
-                    memory.append(session.id, Message("assistant", answer, session.channel))
-                    return answer
+                    // If tool calls were made, re-invoke the standard model for a higher-quality final response.
+                    // For simple queries that needed no tools, the fast model response is used directly.
+                    val finalCompletion = if (toolCallsMade) {
+                        llm.completeWithFunctions(context, commands)
+                    } else {
+                        completion
+                    }
+                    val finalText = if (finalCompletion is FunctionCompletion.Text) finalCompletion.content else completion.content
+                    tokenTracker?.record(session.id, finalCompletion.let { if (it is FunctionCompletion.Text) it.usage else null })
+                    memory.append(session.id, Message("assistant", finalText, session.channel))
+                    return finalText
                 }
             }
         }

@@ -105,7 +105,7 @@ fun main() {
     val pluginChannels = pluginLoader.loadChannels()
     pluginChannels.forEach { channel ->
         channel.start { _, userId, text, imageUrl ->
-            val msg = Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl)
+            val msg = Message(sender = userId, text = text, channel = Channel.PLUGIN, imageUrl = imageUrl)
             gateway.handle(msg)
         }
         println("Plugin channel started: ${channel.name}")

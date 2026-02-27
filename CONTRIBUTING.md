@@ -2,7 +2,9 @@
 
 ## Writing a Plugin Tool
 
-1. Add `com.assistant:core:LATEST` as a dependency (Maven Central, once published).
+1. Add `com.assistant:core:LATEST` as a dependency.
+   **Note:** `com.assistant:core` is not yet published to Maven Central. For now, build the project locally
+   with `./gradlew publishToMavenLocal` and reference the local artifact.
 2. Implement `com.assistant.ports.ToolPort`:
 
 ```kotlin
@@ -32,16 +34,32 @@ Implement `com.assistant.ports.ChannelPort`. See `TelegramAdapter` in `channels/
 class MyChannel : ChannelPort {
     override val name = "my_channel"
 
-    private var onMessage: (suspend (String, String, String, String?) -> String)? = null
-
     override fun start(onMessage: suspend (sessionId: String, userId: String, text: String, imageUrl: String?) -> String) {
-        this.onMessage = onMessage
-        // start your polling/webhook loop here
+        // Launch your polling/webhook loop in a background coroutine.
+        // Call onMessage for every inbound message and deliver the returned reply to the user.
+        CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
+                val inbound = pollForNextMessage() // your transport-specific receive
+                val reply = onMessage(
+                    sessionId = inbound.sessionId,
+                    userId    = inbound.userId,
+                    text      = inbound.text,
+                    imageUrl  = inbound.imageUrl
+                )
+                sendToUser(inbound.sessionId, reply)
+            }
+        }
     }
 
     override fun send(sessionId: String, text: String) {
-        // send proactive message to the session
+        // send a proactive/outbound message to an existing session
     }
+
+    // Implement these with your actual transport logic:
+    private suspend fun pollForNextMessage(): InboundMessage = TODO()
+    private fun sendToUser(sessionId: String, text: String): Unit = TODO()
+
+    private data class InboundMessage(val sessionId: String, val userId: String, val text: String, val imageUrl: String?)
 }
 ```
 
