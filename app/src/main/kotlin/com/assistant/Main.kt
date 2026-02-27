@@ -12,6 +12,7 @@ import com.assistant.llm.LangChain4jEmbeddingProvider
 import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
+import com.assistant.ports.ToolPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.discord.DiscordAdapter
 import com.assistant.telegram.TelegramAdapter
@@ -34,20 +35,47 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+data class AgentStack(
+    val engine: AgentEngine,
+    val memory: SqliteMemoryStore,
+    val tokenTracker: TokenTracker
+)
+
+fun buildAgentEngine(
+    agentName: String,
+    config: AppConfig,
+    llm: LangChain4jProvider,
+    baseTools: List<ToolPort>,
+    embeddingPort: LangChain4jEmbeddingProvider?,
+    globalDir: File
+): AgentStack {
+    val agentDir = File(globalDir, "agents/$agentName").also { it.mkdirs() }
+    val dbPath = File(agentDir, "memory.db").absolutePath
+    val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
+    val tools = if (config.tools.knowledge.enabled) baseTools + KnowledgeIngestTool(memory) else baseTools
+    val registry = ToolRegistry(tools)
+    val workspace = WorkspaceLoader(agentDir, fallbackDir = globalDir)
+    val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
+    val compaction = CompactionService(llm, memory, threshold = 15)
+    val tracker = TokenTracker()
+    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tracker)
+    return AgentStack(engine, memory, tracker)
+}
+
 fun main() {
     val config = loadConfig(secretsPath = "config/secrets.yml")
     val pluginLoader = PluginLoader()
 
-    val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
-    File(dbPath).parentFile.mkdirs()
+    val globalDir = File(System.getProperty("user.home"), ".assistant")
+
     val embeddingPort = config.embedding?.let {
         LangChain4jEmbeddingProvider(EmbeddingConfig(it.provider, it.model, it.apiKey, it.baseUrl))
     }
-    val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
 
     val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl, config.llm.fastModel))
 
-    val tools = buildList {
+    // Base tools shared across all agents (no KnowledgeIngestTool — that is memory-specific)
+    val baseTools: List<ToolPort> = buildList {
         add(FileSystemTool(config.tools.filesystem.allowedPaths))
         add(ShellTool(config.tools.shell.timeoutSeconds, config.tools.shell.maxOutputChars))
         add(WebBrowserTool(
@@ -57,9 +85,6 @@ fun main() {
         ))
         if (config.tools.http.enabled) {
             add(HttpTool())
-        }
-        if (config.tools.knowledge.enabled) {
-            add(KnowledgeIngestTool(memory))
         }
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,
@@ -78,13 +103,35 @@ fun main() {
         addAll(pluginLoader.loadTools())
     }
 
-    val workspace = WorkspaceLoader()
-    val registry = ToolRegistry(tools)
-    val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
-    val compaction = CompactionService(llm, memory, threshold = 15)
-    val tokenTracker = TokenTracker()
-    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker)
-    val gateway = Gateway(engine)
+    val (gateway, activeMemory, activeTokenTracker) = if (config.routing == null) {
+        // === LEGACY PATH (unchanged behavior) ===
+        val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
+        File(dbPath).parentFile.mkdirs()
+        val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
+        val tools = if (config.tools.knowledge.enabled) baseTools + KnowledgeIngestTool(memory) else baseTools
+        val registry = ToolRegistry(tools)
+        val workspace = WorkspaceLoader(globalDir)
+        val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
+        val compaction = CompactionService(llm, memory, threshold = 15)
+        val tokenTracker = TokenTracker()
+        val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker)
+        Triple(Gateway(engine), memory, tokenTracker)
+    } else {
+        // === MULTI-AGENT ROUTING PATH ===
+        val routing = config.routing
+        val allAgentNames = (routing.channels.values + routing.default).toSet()
+        val stacks = allAgentNames.associateWith { buildAgentEngine(it, config, llm, baseTools, embeddingPort, globalDir) }
+
+        val defaultStack = stacks[routing.default]!!
+        val engineByChannel = routing.channels.mapValues { (_, name) -> stacks[name]!!.engine }
+        val gw = Gateway(defaultStack.engine, engineByChannel)
+
+        val telegramAgentName = routing.channels["telegram"] ?: routing.default
+        val telegramStack = stacks[telegramAgentName]!!
+        Triple(gw, telegramStack.memory, telegramStack.tokenTracker)
+    }
+
+    val workspace = WorkspaceLoader(globalDir)
 
     val voiceApiKey = if (config.voice.apiKey.isNotBlank()) config.voice.apiKey
                       else config.llm.apiKey ?: ""
@@ -92,10 +139,10 @@ fun main() {
     val telegram = TelegramAdapter(
         config.telegram.token,
         gateway,
-        memory,
+        activeMemory,
         config.telegram.timeoutMs,
         modelName = config.llm.model,
-        tokenTracker = tokenTracker,
+        tokenTracker = activeTokenTracker,
         voiceEnabled = config.voice.enabled,
         voiceApiKey = voiceApiKey
     )

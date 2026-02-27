@@ -8,7 +8,11 @@ import kotlinx.coroutines.withContext
 data class AgentIdentity(val name: String, val emoji: String, val vibe: String)
 data class SkillEntry(val name: String, val description: String, val body: String)
 
-class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.home"), ".assistant")) {
+class WorkspaceLoader(
+    val workspaceDir: File = File(System.getProperty("user.home"), ".assistant"),
+    private val fallbackDir: File? = null
+) {
+    private val fallback: WorkspaceLoader? = fallbackDir?.let { WorkspaceLoader(it) }
 
     private data class Frontmatter(val meta: Map<String, String>, val body: String)
 
@@ -29,14 +33,14 @@ class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.hom
 
     suspend fun loadSoul(): String? = withContext(Dispatchers.IO) {
         val file = File(workspaceDir, "Soul.md")
-        if (file.exists()) file.readText().trim() else null
+        if (file.exists()) file.readText().trim() else fallback?.loadSoul()
     }
 
     suspend fun loadIdentity(): AgentIdentity? = withContext(Dispatchers.IO) {
         val file = File(workspaceDir, "IDENTITY.md")
-        if (!file.exists()) return@withContext null
+        if (!file.exists()) return@withContext fallback?.loadIdentity()
         val fm = parseFrontmatter(file.readText())
-        val name = fm.meta["name"] ?: return@withContext null
+        val name = fm.meta["name"] ?: return@withContext fallback?.loadIdentity()
         AgentIdentity(
             name = name,
             emoji = fm.meta["emoji"] ?: "",
@@ -46,21 +50,21 @@ class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.hom
 
     suspend fun loadBootstrap(): String? = withContext(Dispatchers.IO) {
         val dir = File(workspaceDir, "bootstrap")
-        if (!dir.exists() || !dir.isDirectory) return@withContext null
+        if (!dir.exists() || !dir.isDirectory) return@withContext fallback?.loadBootstrap()
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".md") }
             ?.sortedBy { it.name }
-            ?: return@withContext null
-        if (files.isEmpty()) return@withContext null
+            ?: return@withContext fallback?.loadBootstrap()
+        if (files.isEmpty()) return@withContext fallback?.loadBootstrap()
         files.joinToString("\n\n") { it.readText().trim() }
     }
 
     suspend fun loadSkills(): List<SkillEntry> = withContext(Dispatchers.IO) {
         val dir = File(workspaceDir, "skills")
-        if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
+        if (!dir.exists() || !dir.isDirectory) return@withContext fallback?.loadSkills() ?: emptyList()
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".md") }
             ?.sortedBy { it.name }
-            ?: return@withContext emptyList()
-        files.mapNotNull { file ->
+            ?: return@withContext fallback?.loadSkills() ?: emptyList()
+        val skills = files.mapNotNull { file ->
             val fm = parseFrontmatter(file.readText())
             val enabled = fm.meta["enabled"]?.lowercase() != "false"
             if (!enabled) return@mapNotNull null
@@ -70,20 +74,21 @@ class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.hom
                 body = fm.body
             )
         }
+        if (skills.isNotEmpty()) skills else fallback?.loadSkills() ?: emptyList()
     }
 
     suspend fun loadUser(): String? = withContext(Dispatchers.IO) {
         val file = File(workspaceDir, "USER.md")
-        if (file.exists()) file.readText().trim() else null
+        if (file.exists()) file.readText().trim() else fallback?.loadUser()
     }
 
     suspend fun loadAgentProfiles(): List<AgentProfile> = withContext(Dispatchers.IO) {
         val dir = File(workspaceDir, "agents")
-        if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
+        if (!dir.exists() || !dir.isDirectory) return@withContext fallback?.loadAgentProfiles() ?: emptyList()
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".md") }
             ?.sortedBy { it.name }
-            ?: return@withContext emptyList()
-        files.mapNotNull { file ->
+            ?: return@withContext fallback?.loadAgentProfiles() ?: emptyList()
+        val profiles = files.mapNotNull { file ->
             val fm = parseFrontmatter(file.readText())
             val enabled = fm.meta["enabled"]?.lowercase() != "false"
             if (!enabled) return@mapNotNull null
@@ -96,6 +101,7 @@ class WorkspaceLoader(val workspaceDir: File = File(System.getProperty("user.hom
                 ?: emptyList()
             AgentProfile(name = name, description = description, triggers = triggers, systemPromptExtension = fm.body)
         }
+        if (profiles.isNotEmpty()) profiles else fallback?.loadAgentProfiles() ?: emptyList()
     }
 
     suspend fun setUserField(key: String, value: String): Unit = withContext(Dispatchers.IO) {

@@ -63,4 +63,23 @@ class GatewayTest {
         // Both have the same logical ID (same user+channel key)
         assertEquals(sessions[0].id, sessions[1].id)
     }
+
+    @Test
+    fun `routes to channel-specific engine`() = runTest {
+        val defaultEngine = mockk<AgentEngine>()
+        val discordEngine = mockk<AgentEngine>()
+        coEvery { defaultEngine.process(any(), any()) } returns "default"
+        coEvery { discordEngine.process(any(), any()) } returns "discord"
+        val gw = Gateway(defaultEngine, mapOf("discord" to discordEngine))
+        assertEquals("default", gw.handle(Message("u", "hi", Channel.TELEGRAM)))
+        assertEquals("discord", gw.handle(Message("u", "hi", Channel.DISCORD)))
+    }
+
+    @Test
+    fun `falls back to default engine for unmapped channel`() = runTest {
+        val defaultEngine = mockk<AgentEngine>()
+        coEvery { defaultEngine.process(any(), any()) } returns "ok"
+        val gw = Gateway(defaultEngine, mapOf("discord" to mockk()))
+        assertEquals("ok", gw.handle(Message("u", "hi", Channel.TELEGRAM)))
+    }
 }
