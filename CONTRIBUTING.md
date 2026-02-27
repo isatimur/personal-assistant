@@ -1,5 +1,16 @@
 # Contributing to Personal Assistant
 
+## One-Time Setup
+
+After cloning, download the Playwright Chromium binary (required for `web_fetch`):
+
+```bash
+./gradlew shadowJar
+java -cp app/build/libs/assistant.jar com.microsoft.playwright.CLI install chromium
+```
+
+This installs Chromium (~130MB) to `~/.cache/ms-playwright/`. Only needed once per machine.
+
 ## Writing a Plugin Tool
 
 1. Add `com.assistant:core:LATEST` as a dependency.
@@ -64,6 +75,51 @@ class MyChannel : ChannelPort {
 ```
 
 Declare in `META-INF/services/com.assistant.ports.ChannelPort`.
+
+## Example: Slack Plugin Channel (Bolt-Kotlin)
+
+A complete Slack channel plugin using [Bolt-Kotlin](https://github.com/slackapi/java-slack-sdk/tree/main/bolt-kotlin-coroutines):
+
+```kotlin
+// slack-channel-plugin/src/main/kotlin/com/example/SlackChannelAdapter.kt
+package com.example
+
+import com.assistant.ports.ChannelPort
+import com.slack.api.bolt.App
+import com.slack.api.bolt.AppConfig
+import com.slack.api.bolt.socket_mode.SocketModeApp
+import kotlinx.coroutines.runBlocking
+
+class SlackChannelAdapter : ChannelPort {
+    override val name = "slack"
+    private val app = App(AppConfig.builder()
+        .singleTeamBotToken(System.getenv("SLACK_BOT_TOKEN"))
+        .build())
+
+    override fun start(onMessage: suspend (sessionId: String, userId: String, text: String, imageUrl: String?) -> String) {
+        app.message(".*") { payload, ctx ->
+            val event = payload.event
+            val sessionId = "SLACK:${event.channel}"
+            val reply = runBlocking { onMessage(sessionId, event.user, event.text, null) }
+            ctx.say(reply)
+            ctx.ack()
+        }
+        SocketModeApp(app).startAsync()
+    }
+
+    override fun send(sessionId: String, text: String) {
+        val channelId = sessionId.removePrefix("SLACK:")
+        app.client().chatPostMessage { it.channel(channelId).text(text) }
+    }
+}
+```
+
+Declare the implementation in `META-INF/services/com.assistant.ports.ChannelPort`:
+```
+com.example.SlackChannelAdapter
+```
+
+Build a fat JAR and drop it into `~/.assistant/plugins/`. Requires `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` environment variables with Socket Mode enabled in your Slack app settings.
 
 ## Plugin JAR structure
 
