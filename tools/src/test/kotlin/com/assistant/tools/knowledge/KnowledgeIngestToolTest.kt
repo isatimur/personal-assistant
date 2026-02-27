@@ -22,20 +22,20 @@ class KnowledgeIngestToolTest {
         val file = File(tmpDir, "notes.txt").also {
             it.writeText("Hello world. ".repeat(50))  // ~650 chars → 2 chunks
         }
-        val tool = KnowledgeIngestTool(memory, "test-user")
+        val tool = KnowledgeIngestTool(memory, "test-user", listOf(tmpDir.absolutePath))
         val result = runBlocking {
             tool.execute(ToolCall("knowledge_ingest", mapOf("path" to file.absolutePath)))
         }
         assertTrue(result is Observation.Success)
         assertTrue((result as Observation.Success).result.contains("chunks"))
-        coVerify(atLeast = 1) { memory.saveFact("test-user", any()) }
+        coVerify(exactly = 2) { memory.saveFact("test-user", any()) }
     }
 
     @Test
     fun `ingest md file stores chunks in memory`(@TempDir tmpDir: File) {
         coJustRun { memory.saveFact(any(), any()) }
         val file = File(tmpDir, "README.md").also { it.writeText("# Title\n\nSome content here.") }
-        val tool = KnowledgeIngestTool(memory)
+        val tool = KnowledgeIngestTool(memory, allowedPaths = listOf(tmpDir.absolutePath))
         val result = runBlocking {
             tool.execute(ToolCall("knowledge_ingest", mapOf("path" to file.absolutePath)))
         }
@@ -44,13 +44,23 @@ class KnowledgeIngestToolTest {
     }
 
     @Test
-    fun `ingest missing file returns error`() {
-        val tool = KnowledgeIngestTool(memory)
+    fun `ingest missing file returns error`(@TempDir tmpDir: File) {
+        val tool = KnowledgeIngestTool(memory, allowedPaths = listOf(tmpDir.absolutePath))
         val result = runBlocking {
-            tool.execute(ToolCall("knowledge_ingest", mapOf("path" to "/nonexistent/file.txt")))
+            tool.execute(ToolCall("knowledge_ingest", mapOf("path" to File(tmpDir, "nonexistent.txt").absolutePath)))
         }
         assertTrue(result is Observation.Error)
         assertTrue((result as Observation.Error).message.contains("not found"))
+    }
+
+    @Test
+    fun `path outside allowed roots returns access denied`() {
+        val tool = KnowledgeIngestTool(memory)
+        val result = runBlocking {
+            tool.execute(ToolCall("knowledge_ingest", mapOf("path" to "/etc/passwd")))
+        }
+        assertTrue(result is Observation.Error)
+        assertTrue((result as Observation.Error).message.contains("Access denied"))
     }
 
     @Test
