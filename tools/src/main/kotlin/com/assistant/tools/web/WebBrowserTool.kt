@@ -4,13 +4,24 @@ import com.assistant.domain.*
 import com.assistant.ports.CommandSpec
 import com.assistant.ports.ParamSpec
 import com.assistant.ports.ToolPort
+import kotlinx.serialization.json.*
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-class WebBrowserTool(private val maxContentChars: Int = 8_000) : ToolPort {
+class WebBrowserTool(
+    private val maxContentChars: Int = 8_000,
+    private val searchProvider: String = "duckduckgo",
+    private val searchApiKey: String = "",
+    private val searchBaseUrl: String = "https://api.search.brave.com"
+) : ToolPort {
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+    }
     override val name = "web"
     override val description = "Fetches web pages and searches. Commands: web_fetch(url), web_search(query)"
 
@@ -29,7 +40,7 @@ class WebBrowserTool(private val maxContentChars: Int = 8_000) : ToolPort {
         ),
         CommandSpec(
             name = "web_search",
-            description = "Search the web using DuckDuckGo and return results",
+            description = "Search the web and return results",
             params = listOf(
                 ParamSpec("query", "string", "The search query")
             )
@@ -58,7 +69,13 @@ class WebBrowserTool(private val maxContentChars: Int = 8_000) : ToolPort {
         Observation.Success(if (text.length > maxContentChars) text.take(maxContentChars) + "..." else text)
     }.getOrElse { Observation.Error(it.message ?: "Fetch failed") }
 
-    private fun search(query: String): Observation = runCatching {
+    private fun search(query: String): Observation = when (searchProvider.lowercase()) {
+        "brave" -> searchBrave(query)
+        "tavily" -> searchTavily(query)
+        else -> searchDuckduckgo(query)
+    }
+
+    private fun searchDuckduckgo(query: String): Observation = runCatching {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val req = Request.Builder()
             .url("https://html.duckduckgo.com/html/?q=$encoded")
@@ -69,4 +86,54 @@ class WebBrowserTool(private val maxContentChars: Int = 8_000) : ToolPort {
             .take(10).joinToString("\n") { it.text() }
         Observation.Success(results.ifBlank { "No results found" })
     }.getOrElse { Observation.Error(it.message ?: "Search failed") }
+
+    private fun searchBrave(query: String): Observation = runCatching {
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val url = "${searchBaseUrl.trimEnd('/')}/res/v1/web/search?q=$encoded&count=10"
+        val req = Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .header("X-Subscription-Token", searchApiKey)
+            .build()
+        val body = client.newCall(req).execute().body?.string()
+            ?: return@runCatching Observation.Error("Empty response from Brave")
+        val root = json.parseToJsonElement(body).jsonObject
+        val results = root["web"]?.jsonObject?.get("results")?.jsonArray
+            ?: return@runCatching Observation.Error("No results")
+        val text = results.take(10).joinToString("\n") { item ->
+            val o = item.jsonObject
+            val title = o["title"]?.jsonPrimitive?.content ?: ""
+            val desc = o["description"]?.jsonPrimitive?.content ?: ""
+            val href = o["url"]?.jsonPrimitive?.content ?: ""
+            "$title\n$desc\n$href"
+        }
+        Observation.Success(text.ifBlank { "No results found" })
+    }.getOrElse { Observation.Error(it.message ?: "Brave search failed") }
+
+    private fun searchTavily(query: String): Observation = runCatching {
+        val bodyJson = buildJsonObject {
+            put("api_key", searchApiKey)
+            put("query", query)
+            put("search_depth", "basic")
+            put("max_results", 10)
+        }.toString()
+        val req = Request.Builder()
+            .url("https://api.tavily.com/search")
+            .header("Content-Type", "application/json")
+            .post(bodyJson.toRequestBody("application/json".toMediaType()))
+            .build()
+        val body = client.newCall(req).execute().body?.string()
+            ?: return@runCatching Observation.Error("Empty response from Tavily")
+        val root = json.parseToJsonElement(body).jsonObject
+        val results = root["results"]?.jsonArray
+            ?: return@runCatching Observation.Error("No results")
+        val text = results.take(10).joinToString("\n") { item ->
+            val o = item.jsonObject
+            val title = o["title"]?.jsonPrimitive?.content ?: ""
+            val content = o["content"]?.jsonPrimitive?.content ?: ""
+            val href = o["url"]?.jsonPrimitive?.content ?: ""
+            "$title\n$content\n$href"
+        }
+        Observation.Success(text.ifBlank { "No results found" })
+    }.getOrElse { Observation.Error(it.message ?: "Tavily search failed") }
 }

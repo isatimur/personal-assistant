@@ -1,6 +1,8 @@
 package com.assistant
 
 import com.assistant.agent.*
+import com.assistant.domain.Channel
+import com.assistant.domain.Message
 import com.assistant.gateway.Gateway
 import com.assistant.heartbeat.HeartbeatAgent
 import com.assistant.heartbeat.HeartbeatConfig
@@ -19,6 +21,7 @@ import com.assistant.tools.github.GitHubTool
 import com.assistant.tools.jira.JiraTool
 import com.assistant.tools.linear.LinearTool
 import com.assistant.tools.shell.ShellTool
+import com.assistant.tools.http.HttpTool
 import com.assistant.tools.web.WebBrowserTool
 import com.assistant.workspace.WorkspaceLoader
 import java.io.File
@@ -31,6 +34,7 @@ import kotlinx.coroutines.launch
 
 fun main() {
     val config = loadConfig(secretsPath = "config/secrets.yml")
+    val pluginLoader = PluginLoader()
 
     val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
     File(dbPath).parentFile.mkdirs()
@@ -39,12 +43,19 @@ fun main() {
     }
     val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
 
-    val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl))
+    val llm = LangChain4jProvider(ModelConfig(config.llm.provider, config.llm.model, config.llm.apiKey, config.llm.baseUrl, config.llm.fastModel))
 
     val tools = buildList {
         add(FileSystemTool(config.tools.filesystem.allowedPaths))
         add(ShellTool(config.tools.shell.timeoutSeconds, config.tools.shell.maxOutputChars))
-        add(WebBrowserTool(config.tools.web.maxContentChars))
+        add(WebBrowserTool(
+            maxContentChars = config.tools.web.maxContentChars,
+            searchProvider = config.tools.web.searchProvider,
+            searchApiKey = config.tools.web.searchApiKey
+        ))
+        if (config.tools.http.enabled) {
+            add(HttpTool())
+        }
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,
                 config.tools.email.smtpHost, config.tools.email.smtpPort,
@@ -59,6 +70,7 @@ fun main() {
         if (config.tools.linear.enabled) {
             add(LinearTool(config.tools.linear.apiKey))
         }
+        addAll(pluginLoader.loadTools())
     }
 
     val workspace = WorkspaceLoader()
@@ -90,6 +102,15 @@ fun main() {
     telegram.reminderManager = reminderManager
     reminderManager.loadAndReschedule()
 
+    val pluginChannels = pluginLoader.loadChannels()
+    pluginChannels.forEach { channel ->
+        channel.start { _, userId, text, imageUrl ->
+            val msg = Message(sender = userId, text = text, channel = Channel.PLUGIN, imageUrl = imageUrl)
+            gateway.handle(msg)
+        }
+        println("Plugin channel started: ${channel.name}")
+    }
+
     val heartbeat = HeartbeatRunner(
         config = HeartbeatConfig(
             enabled = config.heartbeat.enabled,
@@ -107,7 +128,9 @@ fun main() {
     )
 
     println("Personal assistant starting... Send a message on Telegram!")
-    telegram.start()
+    telegram.start { sessionId, userId, text, imageUrl ->
+        gateway.handle(Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl))
+    }
     heartbeat.start()
 
     val mainScope = CoroutineScope(Dispatchers.Default)

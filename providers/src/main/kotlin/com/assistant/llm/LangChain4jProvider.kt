@@ -20,14 +20,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class LangChain4jProvider(private val config: ModelConfig) : LlmPort {
-    private val model: ChatLanguageModel = when (config.provider.lowercase()) {
-        "openai" -> OpenAiChatModel.builder().apiKey(config.apiKey).modelName(config.model).temperature(1.0).build()
-        "anthropic" -> AnthropicChatModel.builder().apiKey(config.apiKey).modelName(config.model).build()
-        "ollama" -> OllamaChatModel.builder()
-            .baseUrl(config.baseUrl ?: "http://localhost:11434")
-            .modelName(config.model).build()
-        else -> throw IllegalArgumentException("Unknown provider: ${config.provider}")
+    private val model: ChatLanguageModel = buildModel(config.provider, config.model, config.apiKey, config.baseUrl)
+
+    private val fastLlm: ChatLanguageModel? = if (!config.fastModel.isNullOrBlank()) {
+        buildModel(config.provider, config.fastModel, config.apiKey, config.baseUrl)
+    } else {
+        null
     }
+
+    private fun buildModel(provider: String, modelName: String, apiKey: String?, baseUrl: String?): ChatLanguageModel =
+        when (provider.lowercase()) {
+            "openai" -> OpenAiChatModel.builder().apiKey(apiKey).modelName(modelName).temperature(1.0).build()
+            "anthropic" -> AnthropicChatModel.builder().apiKey(apiKey).modelName(modelName).build()
+            "ollama" -> OllamaChatModel.builder()
+                .baseUrl(baseUrl ?: "http://localhost:11434")
+                .modelName(modelName).build()
+            else -> throw IllegalArgumentException("Unknown provider: $provider")
+        }
 
     override suspend fun complete(messages: List<ChatMessage>): String {
         val lc4jMessages = messages.toLc4j()
@@ -35,6 +44,17 @@ class LangChain4jProvider(private val config: ModelConfig) : LlmPort {
     }
 
     override suspend fun completeWithFunctions(
+        messages: List<ChatMessage>,
+        commands: List<CommandSpec>
+    ): FunctionCompletion = completeWithModel(model, messages, commands)
+
+    override suspend fun completeWithFunctionsFast(
+        messages: List<ChatMessage>,
+        commands: List<CommandSpec>
+    ): FunctionCompletion = completeWithModel(fastLlm ?: model, messages, commands)
+
+    private suspend fun completeWithModel(
+        model: ChatLanguageModel,
         messages: List<ChatMessage>,
         commands: List<CommandSpec>
     ): FunctionCompletion {
