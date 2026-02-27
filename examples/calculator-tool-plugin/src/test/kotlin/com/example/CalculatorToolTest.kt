@@ -39,6 +39,20 @@ class CalculatorToolTest {
     fun `invalid expression returns Error`() = runTest {
         val result = tool.execute(ToolCall("calculator_evaluate", mapOf("expression" to "2 + abc")))
         assertTrue(result is Observation.Error)
+        val error = result as Observation.Error
+        assertTrue(error.message.isNotEmpty(), "Error message should not be empty")
+    }
+
+    @Test
+    fun `unary minus evaluates correctly`() = runTest {
+        val result = tool.execute(ToolCall("calculator_evaluate", mapOf("expression" to "-3")))
+        assertEquals(Observation.Success("-3"), result)
+    }
+
+    @Test
+    fun `trailing garbage returns Error`() = runTest {
+        val result = tool.execute(ToolCall("calculator_evaluate", mapOf("expression" to "2+2abc")))
+        assertTrue(result is Observation.Error)
     }
 
     @Test
