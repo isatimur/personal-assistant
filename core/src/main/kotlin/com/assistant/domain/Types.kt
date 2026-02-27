@@ -1,6 +1,6 @@
 package com.assistant.domain
 
-enum class Channel { TELEGRAM, PLUGIN, DISCORD }
+enum class Channel { TELEGRAM, PLUGIN, DISCORD, AGENT }
 
 data class Message(
     val sender: String,
