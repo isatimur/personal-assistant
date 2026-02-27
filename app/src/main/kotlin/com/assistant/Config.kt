@@ -34,6 +34,7 @@ import java.io.File
 @Serializable data class JiraSecrets(val email: String? = null, @SerialName("api-token") val apiToken: String? = null)
 @Serializable data class LinearSecrets(@SerialName("api-key") val apiKey: String? = null)
 @Serializable data class VoiceSecrets(@SerialName("api-key") val apiKey: String? = null)
+@Serializable data class DiscordSecrets(val token: String? = null)
 @Serializable data class WebSecrets(@SerialName("search-api-key") val searchApiKey: String? = null)
 @Serializable data class ToolsSecrets(val email: EmailSecrets? = null, val github: GitHubSecrets? = null, val jira: JiraSecrets? = null, val linear: LinearSecrets? = null, val web: WebSecrets? = null)
 @Serializable data class SecretsConfig(
@@ -41,7 +42,8 @@ import java.io.File
     val llm: LlmSecrets? = null,
     val embedding: EmbeddingSecrets? = null,
     val tools: ToolsSecrets? = null,
-    val voice: VoiceSecrets? = null
+    val voice: VoiceSecrets? = null,
+    val discord: DiscordSecrets? = null
 )
 
 fun loadConfig(basePath: String = "config/application.yml", secretsPath: String = "config/secrets.yml"): AppConfig {
@@ -55,6 +57,7 @@ fun loadConfig(basePath: String = "config/application.yml", secretsPath: String 
         llm = secrets.llm?.apiKey?.let { base.llm.copy(apiKey = it) } ?: base.llm,
         embedding = secrets.embedding?.apiKey?.let { base.embedding?.copy(apiKey = it) } ?: base.embedding,
         voice = secrets.voice?.apiKey?.let { base.voice.copy(apiKey = it) } ?: base.voice,
+        discord = secrets.discord?.token?.let { base.discord.copy(token = it) } ?: base.discord,
         tools = run {
             var t = base.tools
             if (secrets.tools?.email != null) {
