@@ -17,7 +17,7 @@ import java.io.File
 @Serializable data class VoiceConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
 @Serializable data class DiscordConfig(val token: String = "", val enabled: Boolean = false)
 @Serializable data class HttpToolConfig(val enabled: Boolean = true)
-@Serializable data class KnowledgeConfig(val enabled: Boolean = true)
+@Serializable data class KnowledgeConfig(val enabled: Boolean = false)
 @Serializable data class ToolsConfig(val shell: ShellConfig = ShellConfig(), val web: WebConfig = WebConfig(), val email: EmailToolConfig = EmailToolConfig(), val filesystem: FileSystemConfig = FileSystemConfig(), val github: GitHubConfig = GitHubConfig(), val jira: JiraConfig = JiraConfig(), val linear: LinearConfig = LinearConfig(), val http: HttpToolConfig = HttpToolConfig(), val knowledge: KnowledgeConfig = KnowledgeConfig())
 @Serializable data class ShellConfig(@SerialName("timeout-seconds") val timeoutSeconds: Long = 30, @SerialName("max-output-chars") val maxOutputChars: Int = 10_000)
 @Serializable data class WebConfig(@SerialName("max-content-chars") val maxContentChars: Int = 8_000, @SerialName("search-provider") val searchProvider: String = "duckduckgo", @SerialName("search-api-key") val searchApiKey: String = "")

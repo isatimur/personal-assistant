@@ -30,10 +30,12 @@ class WebBrowserTool(
         private val json = Json { ignoreUnknownKeys = true }
     }
 
-    private val playwright: Playwright by lazy { Playwright.create() }
-    private val browser: Browser by lazy {
-        playwright.chromium().launch(BrowserType.LaunchOptions().setHeadless(true))
+    private val _playwright = lazy { Playwright.create() }
+    private val _browser = lazy {
+        _playwright.value.chromium().launch(BrowserType.LaunchOptions().setHeadless(true))
     }
+    private val playwright: Playwright by _playwright
+    private val browser: Browser by _browser
     override val name = "web"
     override val description = "Fetches web pages and searches. Commands: web_fetch(url), web_search(query)"
 
@@ -157,7 +159,7 @@ class WebBrowserTool(
     }.getOrElse { Observation.Error(it.message ?: "Tavily search failed") }
 
     override fun close() {
-        runCatching { browser.close() }
-        runCatching { playwright.close() }
+        if (_browser.isInitialized()) runCatching { browser.close() }
+        if (_playwright.isInitialized()) runCatching { playwright.close() }
     }
 }

@@ -19,6 +19,13 @@ class WebBrowserToolTest {
 
     @Test
     fun `fetch known URL returns content`() = runTest {
+        val playwrightAvailable = runCatching {
+            com.microsoft.playwright.Playwright.create().use { true }
+        }.getOrDefault(false)
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            playwrightAvailable,
+            "Playwright not installed — run: playwright install chromium"
+        )
         val server = MockWebServer()
         server.enqueue(
             MockResponse()
@@ -40,6 +47,13 @@ class WebBrowserToolTest {
 
     @Test
     fun `fetch invalid URL returns error`() = runTest {
+        val playwrightAvailable = runCatching {
+            com.microsoft.playwright.Playwright.create().use { true }
+        }.getOrDefault(false)
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            playwrightAvailable,
+            "Playwright not installed — run: playwright install chromium"
+        )
         val localTool = WebBrowserTool()
         try {
             val result = localTool.execute(ToolCall("web_fetch", mapOf("url" to "https://this-domain-xyz-does-not-exist.invalid")))
