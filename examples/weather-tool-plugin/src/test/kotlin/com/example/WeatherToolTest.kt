@@ -54,4 +54,10 @@ class WeatherToolTest {
 
         assertTrue(result is Observation.Error, "Expected Error but got: $result")
     }
+
+    @Test
+    fun `missing city parameter returns Error`() = runTest {
+        val result = tool().execute(ToolCall("weather_current", emptyMap()))
+        assertTrue(result is Observation.Error)
+    }
 }
