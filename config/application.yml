@@ -56,10 +56,16 @@ tools:
     api-key: ""
   http:
     enabled: true
+  knowledge:
+    enabled: true
 
 voice:
   enabled: false  # set to true once you add an OpenAI api-key below (Whisper requires OpenAI, not Anthropic)
   api-key: ""     # set your OpenAI key here (in secrets.yml under voice.api-key)
+
+discord:
+  token: ""       # Bot token from https://discord.com/developers/applications
+  enabled: false  # Set to true once token is configured
 
 heartbeat:
   enabled: true

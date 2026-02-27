@@ -13,6 +13,7 @@ import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
 import com.assistant.reminder.ReminderManager
+import com.assistant.discord.DiscordAdapter
 import com.assistant.telegram.TelegramAdapter
 import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
@@ -22,6 +23,7 @@ import com.assistant.tools.jira.JiraTool
 import com.assistant.tools.linear.LinearTool
 import com.assistant.tools.shell.ShellTool
 import com.assistant.tools.http.HttpTool
+import com.assistant.tools.knowledge.KnowledgeIngestTool
 import com.assistant.tools.web.WebBrowserTool
 import com.assistant.workspace.WorkspaceLoader
 import java.io.File
@@ -55,6 +57,9 @@ fun main() {
         ))
         if (config.tools.http.enabled) {
             add(HttpTool())
+        }
+        if (config.tools.knowledge.enabled) {
+            add(KnowledgeIngestTool(memory))
         }
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,
@@ -132,6 +137,14 @@ fun main() {
         gateway.handle(Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl))
     }
     heartbeat.start()
+
+    if (config.discord.enabled) {
+        val discord = DiscordAdapter(config.discord.token)
+        discord.start { _, userId, text, imageUrl ->
+            gateway.handle(Message(sender = userId, text = text, channel = Channel.DISCORD, imageUrl = imageUrl))
+        }
+        println("Discord adapter started")
+    }
 
     val mainScope = CoroutineScope(Dispatchers.Default)
     val watcher = ConfigWatcher(

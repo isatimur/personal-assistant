@@ -6,7 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.io.File
 
-@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig())
+@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig())
 @Serializable data class TelegramConfig(val token: String, @SerialName("timeout-ms") val timeoutMs: Long = 120_000)
 @Serializable data class LlmConfig(val provider: String, val model: String, @SerialName("api-key") val apiKey: String? = null, @SerialName("base-url") val baseUrl: String? = null, @SerialName("fast-model") val fastModel: String? = null)
 @Serializable data class MemoryConfig(@SerialName("db-path") val dbPath: String, @SerialName("window-size") val windowSize: Int, @SerialName("search-limit") val searchLimit: Int = 5)
@@ -15,8 +15,10 @@ import java.io.File
 @Serializable data class JiraConfig(val enabled: Boolean = false, @SerialName("base-url") val baseUrl: String = "", val email: String = "", @SerialName("api-token") val apiToken: String = "")
 @Serializable data class LinearConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
 @Serializable data class VoiceConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
+@Serializable data class DiscordConfig(val token: String = "", val enabled: Boolean = false)
 @Serializable data class HttpToolConfig(val enabled: Boolean = true)
-@Serializable data class ToolsConfig(val shell: ShellConfig = ShellConfig(), val web: WebConfig = WebConfig(), val email: EmailToolConfig = EmailToolConfig(), val filesystem: FileSystemConfig = FileSystemConfig(), val github: GitHubConfig = GitHubConfig(), val jira: JiraConfig = JiraConfig(), val linear: LinearConfig = LinearConfig(), val http: HttpToolConfig = HttpToolConfig())
+@Serializable data class KnowledgeConfig(val enabled: Boolean = false)
+@Serializable data class ToolsConfig(val shell: ShellConfig = ShellConfig(), val web: WebConfig = WebConfig(), val email: EmailToolConfig = EmailToolConfig(), val filesystem: FileSystemConfig = FileSystemConfig(), val github: GitHubConfig = GitHubConfig(), val jira: JiraConfig = JiraConfig(), val linear: LinearConfig = LinearConfig(), val http: HttpToolConfig = HttpToolConfig(), val knowledge: KnowledgeConfig = KnowledgeConfig())
 @Serializable data class ShellConfig(@SerialName("timeout-seconds") val timeoutSeconds: Long = 30, @SerialName("max-output-chars") val maxOutputChars: Int = 10_000)
 @Serializable data class WebConfig(@SerialName("max-content-chars") val maxContentChars: Int = 8_000, @SerialName("search-provider") val searchProvider: String = "duckduckgo", @SerialName("search-api-key") val searchApiKey: String = "")
 @Serializable data class EmailToolConfig(val enabled: Boolean = false, @SerialName("imap-host") val imapHost: String = "", @SerialName("imap-port") val imapPort: Int = 993, @SerialName("smtp-host") val smtpHost: String = "", @SerialName("smtp-port") val smtpPort: Int = 587, val username: String = "", val password: String = "")
@@ -33,6 +35,7 @@ import java.io.File
 @Serializable data class JiraSecrets(val email: String? = null, @SerialName("api-token") val apiToken: String? = null)
 @Serializable data class LinearSecrets(@SerialName("api-key") val apiKey: String? = null)
 @Serializable data class VoiceSecrets(@SerialName("api-key") val apiKey: String? = null)
+@Serializable data class DiscordSecrets(val token: String? = null)
 @Serializable data class WebSecrets(@SerialName("search-api-key") val searchApiKey: String? = null)
 @Serializable data class ToolsSecrets(val email: EmailSecrets? = null, val github: GitHubSecrets? = null, val jira: JiraSecrets? = null, val linear: LinearSecrets? = null, val web: WebSecrets? = null)
 @Serializable data class SecretsConfig(
@@ -40,7 +43,8 @@ import java.io.File
     val llm: LlmSecrets? = null,
     val embedding: EmbeddingSecrets? = null,
     val tools: ToolsSecrets? = null,
-    val voice: VoiceSecrets? = null
+    val voice: VoiceSecrets? = null,
+    val discord: DiscordSecrets? = null
 )
 
 fun loadConfig(basePath: String = "config/application.yml", secretsPath: String = "config/secrets.yml"): AppConfig {
@@ -54,6 +58,7 @@ fun loadConfig(basePath: String = "config/application.yml", secretsPath: String 
         llm = secrets.llm?.apiKey?.let { base.llm.copy(apiKey = it) } ?: base.llm,
         embedding = secrets.embedding?.apiKey?.let { base.embedding?.copy(apiKey = it) } ?: base.embedding,
         voice = secrets.voice?.apiKey?.let { base.voice.copy(apiKey = it) } ?: base.voice,
+        discord = secrets.discord?.token?.let { base.discord.copy(token = it) } ?: base.discord,
         tools = run {
             var t = base.tools
             if (secrets.tools?.email != null) {
