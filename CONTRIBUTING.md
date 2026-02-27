@@ -171,7 +171,7 @@ cp examples/sysinfo-tool-plugin/build/libs/sysinfo-tool-plugin.jar ~/.assistant/
 
 ### Writing your own plugin
 
-1. Create a new Gradle project with `build.gradle.kts` using the Shadow plugin and `project(":core")` (or `com.assistant:core:VERSION` for standalone projects).
+1. Create a new Gradle project with `build.gradle.kts` using the Shadow plugin and `project(":core")` (or `com.assistant:core:VERSION` for standalone projects). Ensure your `shadowJar` task calls `mergeServiceFiles()` — without it the `META-INF/services` entry may be silently dropped when building the fat JAR.
 2. Implement `com.assistant.ports.ToolPort`.
 3. Declare your implementation in `src/main/resources/META-INF/services/com.assistant.ports.ToolPort`.
 4. Build a fat JAR with `./gradlew shadowJar` and copy it to `~/.assistant/plugins/`.

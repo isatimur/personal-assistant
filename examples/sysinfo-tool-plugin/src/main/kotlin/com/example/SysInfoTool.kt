@@ -23,11 +23,12 @@ class SysInfoTool : ToolPort {
         val totalMb = runtime.totalMemory() / 1_048_576
         val freeMb = runtime.freeMemory() / 1_048_576
         val usedMb = totalMb - freeMb
-        return Observation.Success("""
-            OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")})
-            JVM: ${System.getProperty("java.version")}
-            CPUs: ${runtime.availableProcessors()}
-            Memory: ${usedMb}MB used / ${totalMb}MB total
-        """.trimIndent().trim())
+        val info = buildString {
+            appendLine("OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")})")
+            appendLine("JVM: ${System.getProperty("java.version")}")
+            appendLine("CPUs: ${runtime.availableProcessors()}")
+            append("Memory: ${usedMb}MB used / ${totalMb}MB total")
+        }
+        return Observation.Success(info)
     }
 }
