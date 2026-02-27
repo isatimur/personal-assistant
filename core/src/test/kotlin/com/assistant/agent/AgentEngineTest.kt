@@ -35,8 +35,9 @@ class AgentEngineTest {
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "list files"))
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returnsMany listOf(
             FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}"),
-            FunctionCompletion.Text("Found files in /tmp")
+            FunctionCompletion.Text("fast model placeholder")
         )
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Found files in /tmp")
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt\nb.txt")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
@@ -64,8 +65,9 @@ class AgentEngineTest {
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "write"))
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returnsMany listOf(
             FunctionCompletion.FunctionCall("file_write", "{\"path\": \"/tmp/test.txt\", \"content\": \"hello world\"}"),
-            FunctionCompletion.Text("Done")
+            FunctionCompletion.Text("fast model placeholder")
         )
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Done")
         coEvery { toolRegistry.execute(capture(capturedCall)) } returns Observation.Success("Written")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
@@ -91,8 +93,9 @@ class AgentEngineTest {
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "list files"))
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returnsMany listOf(
             FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}"),
-            FunctionCompletion.Text("done")
+            FunctionCompletion.Text("fast model placeholder")
         )
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("done")
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
 
         val progressMessages = mutableListOf<String>()
@@ -137,8 +140,9 @@ class AgentEngineTest {
         val tracker = TokenTracker()
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returnsMany listOf(
             FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}", TokenUsage(100, 50)),
-            FunctionCompletion.Text("done", TokenUsage(200, 80))
+            FunctionCompletion.Text("done")
         )
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("done", TokenUsage(200, 80))
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5, tokenTracker = tracker)
