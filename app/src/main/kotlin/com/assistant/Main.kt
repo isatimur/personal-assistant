@@ -13,6 +13,7 @@ import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
 import com.assistant.reminder.ReminderManager
+import com.assistant.discord.DiscordAdapter
 import com.assistant.telegram.TelegramAdapter
 import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
@@ -132,6 +133,14 @@ fun main() {
         gateway.handle(Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl))
     }
     heartbeat.start()
+
+    if (config.discord.enabled) {
+        val discord = DiscordAdapter(config.discord.token)
+        discord.start { _, userId, text, imageUrl ->
+            gateway.handle(Message(sender = userId, text = text, channel = Channel.DISCORD, imageUrl = imageUrl))
+        }
+        println("Discord adapter started")
+    }
 
     val mainScope = CoroutineScope(Dispatchers.Default)
     val watcher = ConfigWatcher(
