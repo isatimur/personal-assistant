@@ -37,7 +37,7 @@ class WeatherTool(
         val city = call.arguments["city"]?.toString()
             ?: return Observation.Error("Missing required parameter: city")
 
-        val encodedCity = URLEncoder.encode(city, Charsets.UTF_8)
+        val encodedCity = URLEncoder.encode(city, Charsets.UTF_8).replace("+", "%20")
         val url = "$baseUrl/$encodedCity?format=3"
 
         val request = Request.Builder()

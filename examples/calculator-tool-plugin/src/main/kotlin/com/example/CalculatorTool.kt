@@ -31,7 +31,7 @@ class CalculatorTool : ToolPort {
         return try {
             val parser = Parser(expression)
             val result = parser.parseExpr()
-            if (!parser.isExhausted()) throw IllegalArgumentException("Unexpected trailing input at position ${parser.pos}")
+            if (!parser.isExhausted()) throw IllegalArgumentException("Unexpected trailing input")
             val formatted = if (result % 1.0 == 0.0) result.toLong().toString() else result.toString()
             Observation.Success(formatted)
         } catch (e: ArithmeticException) {
@@ -42,8 +42,7 @@ class CalculatorTool : ToolPort {
     }
 
     private class Parser(private val input: String) {
-        var pos = 0
-            private set
+        private var pos = 0
 
         fun isExhausted(): Boolean {
             skipWhitespace()

@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -59,5 +60,14 @@ class WeatherToolTest {
     fun `missing city parameter returns Error`() = runTest {
         val result = tool().execute(ToolCall("weather_current", emptyMap()))
         assertTrue(result is Observation.Error)
+    }
+
+    @Test
+    fun `city with spaces is URL encoded correctly`() = runTest {
+        server.enqueue(MockResponse().setBody("New York: 18°C"))
+        val result = tool().execute(ToolCall("weather_current", mapOf("city" to "New York")))
+        assertTrue(result is Observation.Success)
+        val request = server.takeRequest()
+        assertEquals("/New%20York?format=3", request.path)
     }
 }
