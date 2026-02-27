@@ -139,3 +139,41 @@ Drop the JAR into `~/.assistant/plugins/` and restart the assistant.
 ./gradlew test          # run all tests
 ./gradlew shadowJar     # build the fat JAR
 ```
+
+## Building and Running the Example Plugins
+
+Three self-contained example plugins live under `examples/`. Each demonstrates how to build, test, and deploy a tool plugin.
+
+### Build a plugin fat JAR
+
+```bash
+./gradlew :examples:sysinfo-tool-plugin:shadowJar
+./gradlew :examples:calculator-tool-plugin:shadowJar
+./gradlew :examples:weather-tool-plugin:shadowJar
+```
+
+### Deploy a plugin
+
+Copy the fat JAR to `~/.assistant/plugins/` and restart the assistant:
+
+```bash
+cp examples/sysinfo-tool-plugin/build/libs/sysinfo-tool-plugin.jar ~/.assistant/plugins/
+# Restart the assistant — sysinfo_get command is now available
+```
+
+### Run plugin tests
+
+```bash
+./gradlew :examples:sysinfo-tool-plugin:test
+./gradlew :examples:calculator-tool-plugin:test
+./gradlew :examples:weather-tool-plugin:test
+```
+
+### Writing your own plugin
+
+1. Create a new Gradle project with `build.gradle.kts` using the Shadow plugin and `project(":core")` (or `com.assistant:core:VERSION` for standalone projects). Ensure your `shadowJar` task calls `mergeServiceFiles()` — without it the `META-INF/services` entry may be silently dropped when building the fat JAR.
+2. Implement `com.assistant.ports.ToolPort`.
+3. Declare your implementation in `src/main/resources/META-INF/services/com.assistant.ports.ToolPort`.
+4. Build a fat JAR with `./gradlew shadowJar` and copy it to `~/.assistant/plugins/`.
+
+See `examples/sysinfo-tool-plugin/` for the simplest complete example.
