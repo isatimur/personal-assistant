@@ -29,6 +29,9 @@ sealed class FunctionCompletion {
 interface LlmPort {
     suspend fun complete(messages: List<ChatMessage>): String
     suspend fun completeWithFunctions(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion
+    /** Uses a faster/cheaper model for tool-selection steps. Defaults to the standard model. */
+    suspend fun completeWithFunctionsFast(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion =
+        completeWithFunctions(messages, commands)
 }
 
 interface ToolPort {
@@ -52,4 +55,17 @@ interface MemoryPort {
     suspend fun clearHistory(sessionId: String)
     suspend fun trimHistory(sessionId: String, deleteCount: Int)
     suspend fun stats(userId: String): MemoryStats
+}
+
+interface ChannelPort {
+    /** Unique channel identifier, e.g. "telegram", "discord". */
+    val name: String
+    /**
+     * Start receiving messages. The [onMessage] lambda is called for every inbound
+     * message and must return the reply string. Implementations run their own
+     * polling/webhook loop in a background coroutine.
+     */
+    fun start(onMessage: suspend (sessionId: String, userId: String, text: String, imageUrl: String?) -> String)
+    /** Send a proactive/outbound message to an existing session. */
+    fun send(sessionId: String, text: String)
 }

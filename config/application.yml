@@ -6,6 +6,7 @@ llm:
   provider: anthropic    # openai | anthropic | ollama
   model: claude-sonnet-4-6
   api-key: "PLACEHOLDER"  # overridden by secrets.yml
+  fast-model: claude-haiku-4-5-20251001  # cheap model for tool-selection steps
   # to revert to OpenAI: set provider: openai, model: gpt-5-nano-2025-08-07
 
 memory:
@@ -29,6 +30,8 @@ tools:
     max-output-chars: 10000
   web:
     max-content-chars: 8000
+    search-provider: duckduckgo
+    search-api-key: ""
   filesystem:
     allowed-paths:
       - "~"
@@ -51,6 +54,8 @@ tools:
   linear:
     enabled: false
     api-key: ""
+  http:
+    enabled: true
 
 voice:
   enabled: false  # set to true once you add an OpenAI api-key below (Whisper requires OpenAI, not Anthropic)
