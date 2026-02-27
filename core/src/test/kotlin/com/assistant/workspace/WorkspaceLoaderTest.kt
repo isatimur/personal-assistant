@@ -177,4 +177,25 @@ class WorkspaceLoaderTest {
         )
         assertTrue(WorkspaceLoader(tmpDir).loadAgentProfiles().isEmpty())
     }
+
+    // ── fallback ──────────────────────────────────────────────────────────────
+
+    @Test
+    fun `falls back to global soul when agent dir has none`() = runTest {
+        val global = File(tmpDir, "global").also { it.mkdirs() }
+        val agent  = File(tmpDir, "agent").also { it.mkdirs() }
+        File(global, "Soul.md").writeText("global soul")
+        val loader = WorkspaceLoader(agent, fallbackDir = global)
+        assertEquals("global soul", loader.loadSoul())
+    }
+
+    @Test
+    fun `agent soul takes precedence over global`() = runTest {
+        val global = File(tmpDir, "global").also { it.mkdirs() }
+        val agent  = File(tmpDir, "agent").also { it.mkdirs() }
+        File(global, "Soul.md").writeText("global soul")
+        File(agent,  "Soul.md").writeText("agent soul")
+        val loader = WorkspaceLoader(agent, fallbackDir = global)
+        assertEquals("agent soul", loader.loadSoul())
+    }
 }

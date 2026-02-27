@@ -4,9 +4,16 @@ import com.assistant.agent.AgentEngine
 import com.assistant.domain.*
 import java.util.concurrent.ConcurrentHashMap
 
-class Gateway(private val engine: AgentEngine, private val sessionTtlMs: Long = 24 * 60 * 60 * 1000L) {
+class Gateway(
+    private val defaultEngine: AgentEngine,
+    private val engineByChannel: Map<String, AgentEngine> = emptyMap(),
+    private val sessionTtlMs: Long = 24 * 60 * 60 * 1000L
+) {
     private val sessions   = ConcurrentHashMap<String, Session>()
     private val lastActive = ConcurrentHashMap<String, Long>()
+
+    private fun engineFor(channel: Channel): AgentEngine =
+        engineByChannel[channel.name.lowercase()] ?: defaultEngine
 
     private fun evictExpired() {
         val cutoff = System.currentTimeMillis() - sessionTtlMs
@@ -24,6 +31,6 @@ class Gateway(private val engine: AgentEngine, private val sessionTtlMs: Long = 
         val key = "${message.channel}:${message.sender}"
         val session = sessions.getOrPut(key) { Session(id = key, userId = message.sender, channel = message.channel) }
         lastActive[key] = System.currentTimeMillis()
-        return engine.process(session, message, onProgress)
+        return engineFor(message.channel).process(session, message, onProgress)
     }
 }
