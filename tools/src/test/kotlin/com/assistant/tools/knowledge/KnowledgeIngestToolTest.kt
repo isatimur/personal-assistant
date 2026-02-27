@@ -40,7 +40,7 @@ class KnowledgeIngestToolTest {
             tool.execute(ToolCall("knowledge_ingest", mapOf("path" to file.absolutePath)))
         }
         assertTrue(result is Observation.Success)
-        coVerify(atLeast = 1) { memory.saveFact("knowledge", any()) }
+        coVerify(exactly = 1) { memory.saveFact("knowledge", any()) }
     }
 
     @Test
