@@ -19,15 +19,15 @@ class SysInfoTool : ToolPort {
 
     override suspend fun execute(call: ToolCall): Observation {
         if (call.name != "sysinfo_get") return Observation.Error("Unknown command: ${call.name}")
-        val rt = Runtime.getRuntime()
-        val totalMb = rt.totalMemory() / 1_048_576
-        val freeMb = rt.freeMemory() / 1_048_576
+        val runtime = Runtime.getRuntime()
+        val totalMb = runtime.totalMemory() / 1_048_576
+        val freeMb = runtime.freeMemory() / 1_048_576
         val usedMb = totalMb - freeMb
         return Observation.Success("""
             OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")})
             JVM: ${System.getProperty("java.version")}
-            CPUs: ${rt.availableProcessors()}
+            CPUs: ${runtime.availableProcessors()}
             Memory: ${usedMb}MB used / ${totalMb}MB total
-        """.trimIndent())
+        """.trimIndent().trim())
     }
 }
