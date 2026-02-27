@@ -5,11 +5,17 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
 class WebBrowserToolTest {
     private val tool = WebBrowserTool()
+
+    @AfterEach
+    fun tearDown() {
+        tool.close()
+    }
 
     @Test
     fun `fetch known URL returns content`() = runTest {
