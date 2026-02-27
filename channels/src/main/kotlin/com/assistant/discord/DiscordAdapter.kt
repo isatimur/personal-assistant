@@ -3,18 +3,20 @@ package com.assistant.discord
 import com.assistant.ports.ChannelPort
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.JDABuilder
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import net.dv8tion.jda.api.hooks.ListenerAdapter
 import net.dv8tion.jda.api.requests.GatewayIntent
+import java.io.Closeable
 import java.util.logging.Logger
 import kotlin.jvm.Volatile
 
 class DiscordAdapter(
     private val token: String
-) : ChannelPort {
+) : ChannelPort, Closeable {
     private val logger = Logger.getLogger(DiscordAdapter::class.java.name)
     override val name = "discord"
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -49,6 +51,7 @@ class DiscordAdapter(
             return
         }
         val channel = jda?.getTextChannelById(channelId)
+            ?: jda?.getThreadChannelById(channelId)
         if (channel == null) {
             logger.warning("Discord channel not found for id: $channelId")
             return
@@ -56,5 +59,10 @@ class DiscordAdapter(
         channel.sendMessage(text).queue(null) { error ->
             logger.warning("Failed to send Discord message: ${error.message}")
         }
+    }
+
+    override fun close() {
+        scope.cancel()
+        jda?.shutdown()
     }
 }
