@@ -3,6 +3,7 @@ package com.assistant
 import com.assistant.agent.*
 import com.assistant.domain.Channel
 import com.assistant.domain.Message
+import com.assistant.domain.Session
 import com.assistant.gateway.Gateway
 import com.assistant.heartbeat.HeartbeatAgent
 import com.assistant.heartbeat.HeartbeatConfig
@@ -16,6 +17,7 @@ import com.assistant.ports.ToolPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.discord.DiscordAdapter
 import com.assistant.telegram.TelegramAdapter
+import com.assistant.tools.agent.AskAgentTool
 import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
 import com.assistant.tools.filesystem.FileSystemTool
@@ -32,13 +34,17 @@ import java.nio.file.Paths
 import kotlin.system.exitProcess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class AgentStack(
     val engine: AgentEngine,
     val memory: SqliteMemoryStore,
-    val tokenTracker: TokenTracker
+    val tokenTracker: TokenTracker,
+    val tools: List<ToolPort>,
+    val workspace: WorkspaceLoader,
+    val compaction: CompactionService
 )
 
 fun buildAgentEngine(
@@ -59,7 +65,7 @@ fun buildAgentEngine(
     val compaction = CompactionService(llm, memory, threshold = 15)
     val tracker = TokenTracker()
     val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tracker)
-    return AgentStack(engine, memory, tracker)
+    return AgentStack(engine, memory, tracker, tools, workspace, compaction)
 }
 
 fun main() {
@@ -120,14 +126,39 @@ fun main() {
         // === MULTI-AGENT ROUTING PATH ===
         val routing = config.routing
         val allAgentNames = (routing.channels.values + routing.default).toSet()
-        val stacks = allAgentNames.associateWith { buildAgentEngine(it, config, llm, baseTools, embeddingPort, globalDir) }
+        val baseStacks = allAgentNames.associateWith { buildAgentEngine(it, config, llm, baseTools, embeddingPort, globalDir) }
 
-        val defaultStack = stacks[routing.default]!!
-        val engineByChannel = routing.channels.mapValues { (_, name) -> stacks[name]!!.engine }
+        // Create the inter-agent bus and rebuild engines with AskAgentTool when messaging is enabled
+        val busScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val bus = InProcessAgentBus(busScope)
+
+        val finalStacks = if (routing.messaging.enabled) {
+            baseStacks.mapValues { (agentName, stack) ->
+                val allTools = stack.tools + AskAgentTool(bus, agentName, routing.messaging.timeoutMs)
+                val newRegistry = ToolRegistry(allTools)
+                val newAssembler = ContextAssembler(stack.memory, newRegistry, config.memory.windowSize, config.memory.searchLimit, stack.workspace)
+                val newEngine = AgentEngine(llm, stack.memory, newRegistry, newAssembler, compactionService = stack.compaction, tokenTracker = stack.tokenTracker)
+                stack.copy(engine = newEngine)
+            }
+        } else {
+            baseStacks
+        }
+
+        // Register all agents with the bus so they can receive inter-agent messages
+        finalStacks.forEach { (agentName, stack) ->
+            bus.registerAgent(agentName) { from, text ->
+                val sessionKey = "AGENT:$from→$agentName"
+                val session = Session(id = sessionKey, userId = from, channel = Channel.AGENT)
+                stack.engine.process(session, Message(sender = from, text = text, channel = Channel.AGENT))
+            }
+        }
+
+        val defaultStack = finalStacks[routing.default]!!
+        val engineByChannel = routing.channels.mapValues { (_, name) -> finalStacks[name]!!.engine }
         val gw = Gateway(defaultStack.engine, engineByChannel)
 
         val telegramAgentName = routing.channels["telegram"] ?: routing.default
-        val telegramStack = stacks[telegramAgentName]!!
+        val telegramStack = finalStacks[telegramAgentName]!!
         Triple(gw, telegramStack.memory, telegramStack.tokenTracker)
     }
 

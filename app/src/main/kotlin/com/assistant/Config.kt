@@ -6,9 +6,15 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.io.File
 
+@Serializable data class AgentMessagingConfig(
+    val enabled: Boolean = true,
+    @SerialName("timeout-ms") val timeoutMs: Long = 30_000
+)
+
 @Serializable data class RoutingConfig(
     val channels: Map<String, String> = emptyMap(),  // channel name (lowercase) → agent name
-    val default: String = "default"
+    val default: String = "default",
+    val messaging: AgentMessagingConfig = AgentMessagingConfig()
 )
 
 @Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig(), val routing: RoutingConfig? = null)
