@@ -8,4 +8,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     implementation("org.apache.pdfbox:pdfbox:3.0.3")
+    implementation("com.microsoft.playwright:playwright:1.49.0")
 }

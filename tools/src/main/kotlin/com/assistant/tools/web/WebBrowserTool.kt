@@ -4,12 +4,19 @@ import com.assistant.domain.*
 import com.assistant.ports.CommandSpec
 import com.assistant.ports.ParamSpec
 import com.assistant.ports.ToolPort
+import com.microsoft.playwright.Browser
+import com.microsoft.playwright.BrowserType
+import com.microsoft.playwright.Page
+import com.microsoft.playwright.Playwright
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
+import java.io.Closeable
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -18,9 +25,14 @@ class WebBrowserTool(
     private val searchProvider: String = "duckduckgo",
     private val searchApiKey: String = "",
     private val searchBaseUrl: String = "https://api.search.brave.com"
-) : ToolPort {
+) : ToolPort, Closeable {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
+    }
+
+    private val playwright: Playwright by lazy { Playwright.create() }
+    private val browser: Browser by lazy {
+        playwright.chromium().launch(BrowserType.LaunchOptions().setHeadless(true))
     }
     override val name = "web"
     override val description = "Fetches web pages and searches. Commands: web_fetch(url), web_search(query)"
@@ -61,13 +73,20 @@ class WebBrowserTool(
         }
     }
 
-    private fun fetchUrl(url: String): Observation = runCatching {
-        val req = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-        val body = client.newCall(req).execute().body?.string()
-            ?: return@runCatching Observation.Error("Empty response")
-        val text = Jsoup.parse(body).text()
-        Observation.Success(if (text.length > maxContentChars) text.take(maxContentChars) + "..." else text)
-    }.getOrElse { Observation.Error(it.message ?: "Fetch failed") }
+    private suspend fun fetchUrl(url: String): Observation = withContext(Dispatchers.IO) {
+        runCatching {
+            browser.newPage().use { page ->
+                page.navigate(url, Page.NavigateOptions().setTimeout(15_000.0))
+                page.waitForLoadState(
+                    com.microsoft.playwright.options.LoadState.NETWORKIDLE,
+                    Page.WaitForLoadStateOptions().setTimeout(15_000.0)
+                )
+                val html = page.content()
+                val text = Jsoup.parse(html).text()
+                Observation.Success(if (text.length > maxContentChars) text.take(maxContentChars) + "..." else text)
+            }
+        }.getOrElse { Observation.Error(it.message ?: "Fetch failed") }
+    }
 
     private fun search(query: String): Observation = when (searchProvider.lowercase()) {
         "brave" -> searchBrave(query)
@@ -136,4 +155,9 @@ class WebBrowserTool(
         }
         Observation.Success(text.ifBlank { "No results found" })
     }.getOrElse { Observation.Error(it.message ?: "Tavily search failed") }
+
+    override fun close() {
+        runCatching { browser.close() }
+        runCatching { playwright.close() }
+    }
 }
