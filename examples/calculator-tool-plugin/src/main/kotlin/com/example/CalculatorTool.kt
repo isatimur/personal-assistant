@@ -29,7 +29,9 @@ class CalculatorTool : ToolPort {
         val expression = call.arguments["expression"]?.toString()
             ?: return Observation.Error("Missing required parameter: expression")
         return try {
-            val result = Parser(expression).parseExpr()
+            val parser = Parser(expression)
+            val result = parser.parseExpr()
+            if (!parser.isExhausted()) throw IllegalArgumentException("Unexpected trailing input at position ${parser.pos}")
             val formatted = if (result % 1.0 == 0.0) result.toLong().toString() else result.toString()
             Observation.Success(formatted)
         } catch (e: ArithmeticException) {
@@ -40,15 +42,22 @@ class CalculatorTool : ToolPort {
     }
 
     private class Parser(private val input: String) {
-        private var pos = 0
+        var pos = 0
+            private set
+
+        fun isExhausted(): Boolean {
+            skipWhitespace()
+            return pos >= input.length
+        }
 
         fun parseExpr(): Double {
             var result = parseTerm()
-            while (pos < input.length) {
+            while (true) {
                 skipWhitespace()
-                when {
-                    pos < input.length && input[pos] == '+' -> { pos++; result += parseTerm() }
-                    pos < input.length && input[pos] == '-' -> { pos++; result -= parseTerm() }
+                if (pos >= input.length) break
+                when (input[pos]) {
+                    '+' -> { pos++; result += parseTerm() }
+                    '-' -> { pos++; result -= parseTerm() }
                     else -> break
                 }
             }
@@ -57,11 +66,12 @@ class CalculatorTool : ToolPort {
 
         private fun parseTerm(): Double {
             var result = parseFactor()
-            while (pos < input.length) {
+            while (true) {
                 skipWhitespace()
-                when {
-                    pos < input.length && input[pos] == '*' -> { pos++; result *= parseFactor() }
-                    pos < input.length && input[pos] == '/' -> {
+                if (pos >= input.length) break
+                when (input[pos]) {
+                    '*' -> { pos++; result *= parseFactor() }
+                    '/' -> {
                         pos++
                         val divisor = parseFactor()
                         if (divisor == 0.0) throw ArithmeticException("Division by zero")
@@ -86,6 +96,7 @@ class CalculatorTool : ToolPort {
                     pos++
                     result
                 }
+                input[pos] == '-' -> { pos++; -parseFactor() }
                 input[pos].isDigit() || input[pos] == '.' -> parseNumber()
                 else -> throw IllegalArgumentException("Unexpected token '${input[pos]}' at position $pos")
             }
