@@ -61,6 +61,10 @@ voice:
   enabled: false  # set to true once you add an OpenAI api-key below (Whisper requires OpenAI, not Anthropic)
   api-key: ""     # set your OpenAI key here (in secrets.yml under voice.api-key)
 
+discord:
+  token: ""       # Bot token from https://discord.com/developers/applications
+  enabled: false  # Set to true once token is configured
+
 heartbeat:
   enabled: true
   cron: "0 8 * * 1-5"   # weekdays 8am Lisbon time

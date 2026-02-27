@@ -6,7 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.io.File
 
-@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig())
+@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig())
 @Serializable data class TelegramConfig(val token: String, @SerialName("timeout-ms") val timeoutMs: Long = 120_000)
 @Serializable data class LlmConfig(val provider: String, val model: String, @SerialName("api-key") val apiKey: String? = null, @SerialName("base-url") val baseUrl: String? = null, @SerialName("fast-model") val fastModel: String? = null)
 @Serializable data class MemoryConfig(@SerialName("db-path") val dbPath: String, @SerialName("window-size") val windowSize: Int, @SerialName("search-limit") val searchLimit: Int = 5)
@@ -15,6 +15,7 @@ import java.io.File
 @Serializable data class JiraConfig(val enabled: Boolean = false, @SerialName("base-url") val baseUrl: String = "", val email: String = "", @SerialName("api-token") val apiToken: String = "")
 @Serializable data class LinearConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
 @Serializable data class VoiceConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
+@Serializable data class DiscordConfig(val token: String = "", val enabled: Boolean = false)
 @Serializable data class HttpToolConfig(val enabled: Boolean = true)
 @Serializable data class ToolsConfig(val shell: ShellConfig = ShellConfig(), val web: WebConfig = WebConfig(), val email: EmailToolConfig = EmailToolConfig(), val filesystem: FileSystemConfig = FileSystemConfig(), val github: GitHubConfig = GitHubConfig(), val jira: JiraConfig = JiraConfig(), val linear: LinearConfig = LinearConfig(), val http: HttpToolConfig = HttpToolConfig())
 @Serializable data class ShellConfig(@SerialName("timeout-seconds") val timeoutSeconds: Long = 30, @SerialName("max-output-chars") val maxOutputChars: Int = 10_000)
