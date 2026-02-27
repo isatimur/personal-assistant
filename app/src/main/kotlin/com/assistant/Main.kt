@@ -23,6 +23,7 @@ import com.assistant.tools.jira.JiraTool
 import com.assistant.tools.linear.LinearTool
 import com.assistant.tools.shell.ShellTool
 import com.assistant.tools.http.HttpTool
+import com.assistant.tools.knowledge.KnowledgeIngestTool
 import com.assistant.tools.web.WebBrowserTool
 import com.assistant.workspace.WorkspaceLoader
 import java.io.File
@@ -56,6 +57,9 @@ fun main() {
         ))
         if (config.tools.http.enabled) {
             add(HttpTool())
+        }
+        if (config.tools.knowledge.enabled) {
+            add(KnowledgeIngestTool(memory))
         }
         if (config.tools.email.enabled) {
             add(EmailTool(EmailConfig(config.tools.email.imapHost, config.tools.email.imapPort,

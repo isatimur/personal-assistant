@@ -56,6 +56,8 @@ tools:
     api-key: ""
   http:
     enabled: true
+  knowledge:
+    enabled: true
 
 voice:
   enabled: false  # set to true once you add an OpenAI api-key below (Whisper requires OpenAI, not Anthropic)
