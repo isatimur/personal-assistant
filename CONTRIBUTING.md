@@ -88,7 +88,6 @@ import com.assistant.ports.ChannelPort
 import com.slack.api.bolt.App
 import com.slack.api.bolt.AppConfig
 import com.slack.api.bolt.socket_mode.SocketModeApp
-import kotlinx.coroutines.runBlocking
 
 class SlackChannelAdapter : ChannelPort {
     override val name = "slack"
@@ -97,14 +96,16 @@ class SlackChannelAdapter : ChannelPort {
         .build())
 
     override fun start(onMessage: suspend (sessionId: String, userId: String, text: String, imageUrl: String?) -> String) {
+        // bolt-kotlin-coroutines handlers are suspend — call onMessage directly, no runBlocking needed
         app.message(".*") { payload, ctx ->
             val event = payload.event
             val sessionId = "SLACK:${event.channel}"
-            val reply = runBlocking { onMessage(sessionId, event.user, event.text, null) }
+            val reply = onMessage(sessionId, event.user, event.text, null)
             ctx.say(reply)
             ctx.ack()
         }
-        SocketModeApp(app).startAsync()
+        // SLACK_APP_TOKEN is read automatically from the environment by SocketModeApp
+        SocketModeApp(app).startAsync() // non-blocking — the assistant process keeps the JVM alive
     }
 
     override fun send(sessionId: String, text: String) {
