@@ -9,7 +9,7 @@ class AgentBusTest {
     @Test
     fun `request routes to registered agent`() = runTest {
         val bus = InProcessAgentBus(backgroundScope)
-        bus.registerAgent("worker") { _, message -> "response to: $message" }
+        bus.registerAgent("worker") { _, message, _ -> "response to: $message" }
 
         val result = bus.request(from = "caller", to = "worker", message = "hello")
         assertEquals("response to: hello", result)
@@ -27,7 +27,7 @@ class AgentBusTest {
     @Test
     fun `timeout returns error string`() = runTest {
         val bus = InProcessAgentBus(backgroundScope)
-        bus.registerAgent("slow") { _, _ ->
+        bus.registerAgent("slow") { _, _, _ ->
             kotlinx.coroutines.delay(60_000)
             "too late"
         }
@@ -40,7 +40,7 @@ class AgentBusTest {
     @Test
     fun `passes caller name to handler`() = runTest {
         val bus = InProcessAgentBus(backgroundScope)
-        bus.registerAgent("worker") { from, _ -> "echo:$from" }
+        bus.registerAgent("worker") { from, _, _ -> "echo:$from" }
 
         val result = bus.request(from = "personal", to = "worker", message = "ping")
         assertEquals("echo:personal", result)
@@ -49,10 +49,19 @@ class AgentBusTest {
     @Test
     fun `multiple agents can be registered independently`() = runTest {
         val bus = InProcessAgentBus(backgroundScope)
-        bus.registerAgent("agent-a") { _, _ -> "from-a" }
-        bus.registerAgent("agent-b") { _, _ -> "from-b" }
+        bus.registerAgent("agent-a") { _, _, _ -> "from-a" }
+        bus.registerAgent("agent-b") { _, _, _ -> "from-b" }
 
         assertEquals("from-a", bus.request(from = "caller", to = "agent-a", message = "ping"))
         assertEquals("from-b", bus.request(from = "caller", to = "agent-b", message = "ping"))
+    }
+
+    @Test
+    fun `ephemeral flag is passed to handler`() = runTest {
+        val bus = InProcessAgentBus(backgroundScope)
+        bus.registerAgent("worker") { _, _, ephemeral -> "ephemeral=$ephemeral" }
+
+        assertEquals("ephemeral=true",  bus.request("c", "worker", "hi", ephemeral = true))
+        assertEquals("ephemeral=false", bus.request("c", "worker", "hi", ephemeral = false))
     }
 }
