@@ -29,7 +29,10 @@ class AgentGrpcServer(
         Runtime.getRuntime().addShutdownHook(Thread { server.shutdown() })
     }
 
-    /** Test seam: starts in-process with no real port and no registry.register() call. */
+    /**
+     * Test seam: starts on an in-process transport with no real port and no
+     * [registry] side-effects. Not intended to be called from production code.
+     */
     fun startInProcess(serverName: String): Server {
         server = InProcessServerBuilder.forName(serverName)
             .directExecutor()
