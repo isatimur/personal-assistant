@@ -16,6 +16,8 @@ dependencies {
     implementation("com.google.protobuf:protobuf-kotlin:3.25.3")
     implementation("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("io.grpc:grpc-testing:1.63.0")
+    // grpc-inprocess is in implementation (not testImplementation) because
+    // AgentGrpcServer.startInProcess() — a test seam — uses InProcessServerBuilder.
     implementation("io.grpc:grpc-inprocess:1.63.0")
 }
 

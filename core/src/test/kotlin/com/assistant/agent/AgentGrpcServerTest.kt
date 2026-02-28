@@ -19,14 +19,18 @@ class AgentGrpcServerTest {
 
         val grpcServer = server.startInProcess("test-server-1")
         val channel = InProcessChannelBuilder.forName("test-server-1").directExecutor().build()
-        val stub = AgentServiceGrpcKt.AgentServiceCoroutineStub(channel)
+        try {
+            val stub = AgentServiceGrpcKt.AgentServiceCoroutineStub(channel)
 
-        val response = withContext(Dispatchers.IO) {
-            stub.ask(AgentRequest.newBuilder().setFrom("caller").setMessage("hello").build())
+            val response = withContext(Dispatchers.IO) {
+                stub.ask(AgentRequest.newBuilder().setFrom("caller").setMessage("hello").build())
+            }
+
+            assertEquals("reply from caller: hello", response.text)
+        } finally {
+            channel.shutdown()
+            grpcServer.shutdown()
         }
-
-        assertEquals("reply from caller: hello", response.text)
-        grpcServer.shutdown()
     }
 
     @Test
@@ -37,14 +41,18 @@ class AgentGrpcServerTest {
 
         val grpcServer = server.startInProcess("test-server-2")
         val channel = InProcessChannelBuilder.forName("test-server-2").directExecutor().build()
-        val stub = AgentServiceGrpcKt.AgentServiceCoroutineStub(channel)
+        try {
+            val stub = AgentServiceGrpcKt.AgentServiceCoroutineStub(channel)
 
-        val response = withContext(Dispatchers.IO) {
-            stub.ask(AgentRequest.newBuilder().setFrom("caller").setMessage("hello").build())
+            val response = withContext(Dispatchers.IO) {
+                stub.ask(AgentRequest.newBuilder().setFrom("caller").setMessage("hello").build())
+            }
+
+            assertTrue(response.text.startsWith("Error:"))
+        } finally {
+            channel.shutdown()
+            grpcServer.shutdown()
         }
-
-        assertTrue(response.text.startsWith("Error:"))
-        grpcServer.shutdown()
     }
 
     @Test
@@ -55,13 +63,17 @@ class AgentGrpcServerTest {
 
         val grpcServer = server.startInProcess("test-server-3")
         val channel = InProcessChannelBuilder.forName("test-server-3").directExecutor().build()
-        val stub = AgentServiceGrpcKt.AgentServiceCoroutineStub(channel)
+        try {
+            val stub = AgentServiceGrpcKt.AgentServiceCoroutineStub(channel)
 
-        val response = withContext(Dispatchers.IO) {
-            stub.ask(AgentRequest.newBuilder().setFrom("c").setMessage("hi").setEphemeral(true).build())
+            val response = withContext(Dispatchers.IO) {
+                stub.ask(AgentRequest.newBuilder().setFrom("c").setMessage("hi").setEphemeral(true).build())
+            }
+
+            assertEquals("ephemeral=true", response.text)
+        } finally {
+            channel.shutdown()
+            grpcServer.shutdown()
         }
-
-        assertEquals("ephemeral=true", response.text)
-        grpcServer.shutdown()
     }
 }
