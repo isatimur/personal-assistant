@@ -13,6 +13,7 @@ import com.assistant.llm.LangChain4jEmbeddingProvider
 import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
 import com.assistant.memory.SqliteMemoryStore
+import com.assistant.ports.EnginePlugin
 import com.assistant.ports.ToolPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.discord.DiscordAdapter
@@ -44,7 +45,8 @@ data class AgentStack(
     val tokenTracker: TokenTracker,
     val tools: List<ToolPort>,
     val workspace: WorkspaceLoader,
-    val compaction: CompactionService
+    val compaction: CompactionService,
+    val plugins: List<EnginePlugin>
 )
 
 fun buildAgentEngine(
@@ -53,7 +55,8 @@ fun buildAgentEngine(
     llm: LangChain4jProvider,
     baseTools: List<ToolPort>,
     embeddingPort: LangChain4jEmbeddingProvider?,
-    globalDir: File
+    globalDir: File,
+    plugins: List<EnginePlugin> = emptyList()
 ): AgentStack {
     val agentDir = File(globalDir, "agents/$agentName").also { it.mkdirs() }
     val dbPath = File(agentDir, "memory.db").absolutePath
@@ -64,8 +67,8 @@ fun buildAgentEngine(
     val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
     val compaction = CompactionService(llm, memory, threshold = 15)
     val tracker = TokenTracker()
-    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tracker)
-    return AgentStack(engine, memory, tracker, tools, workspace, compaction)
+    val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tracker, plugins = plugins)
+    return AgentStack(engine, memory, tracker, tools, workspace, compaction, plugins)
 }
 
 fun main() {
@@ -109,6 +112,8 @@ fun main() {
         addAll(pluginLoader.loadTools())
     }
 
+    val defaultPlugins: List<EnginePlugin> = listOf(LoggingPlugin())
+
     val (gateway, activeMemory, activeTokenTracker) = if (config.routing == null) {
         // === LEGACY PATH (unchanged behavior) ===
         val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
@@ -120,13 +125,13 @@ fun main() {
         val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
         val compaction = CompactionService(llm, memory, threshold = 15)
         val tokenTracker = TokenTracker()
-        val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker)
+        val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker, plugins = defaultPlugins)
         Triple(Gateway(engine), memory, tokenTracker)
     } else {
         // === MULTI-AGENT ROUTING PATH ===
         val routing = config.routing
         val allAgentNames = (routing.channels.values + routing.default).toSet()
-        val baseStacks = allAgentNames.associateWith { buildAgentEngine(it, config, llm, baseTools, embeddingPort, globalDir) }
+        val baseStacks = allAgentNames.associateWith { buildAgentEngine(it, config, llm, baseTools, embeddingPort, globalDir, defaultPlugins) }
 
         // Create the inter-agent bus and rebuild engines with AskAgentTool when messaging is enabled
         val busScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -137,7 +142,7 @@ fun main() {
                 val allTools = stack.tools + AskAgentTool(bus, agentName, routing.messaging.timeoutMs)
                 val newRegistry = ToolRegistry(allTools)
                 val newAssembler = ContextAssembler(stack.memory, newRegistry, config.memory.windowSize, config.memory.searchLimit, stack.workspace)
-                val newEngine = AgentEngine(llm, stack.memory, newRegistry, newAssembler, compactionService = stack.compaction, tokenTracker = stack.tokenTracker)
+                val newEngine = AgentEngine(llm, stack.memory, newRegistry, newAssembler, compactionService = stack.compaction, tokenTracker = stack.tokenTracker, plugins = stack.plugins)
                 stack.copy(engine = newEngine)
             }
         } else {
