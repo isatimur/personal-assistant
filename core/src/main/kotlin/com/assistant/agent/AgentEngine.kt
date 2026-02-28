@@ -3,6 +3,7 @@ package com.assistant.agent
 import com.assistant.domain.*
 import com.assistant.ports.*
 import kotlinx.serialization.json.*
+import java.util.logging.Logger
 
 class AgentEngine(
     private val llm: LlmPort,
@@ -11,9 +12,10 @@ class AgentEngine(
     private val assembler: ContextAssembler,
     private val maxSteps: Int = 10,
     private val compactionService: CompactionService? = null,
-    private val tokenTracker: TokenTracker? = null
+    private val tokenTracker: TokenTracker? = null,
+    private val plugins: List<EnginePlugin> = emptyList()
 ) {
-    private val logger = java.util.logging.Logger.getLogger(AgentEngine::class.java.name)
+    private val logger = Logger.getLogger(AgentEngine::class.java.name)
 
     suspend fun process(
         session: Session,
@@ -30,18 +32,26 @@ class AgentEngine(
         val commands = toolRegistry.allCommands()
 
         var toolCallsMade = false
-        repeat(maxSteps) {
+        repeat(maxSteps) { stepIndex ->
+            plugins.fireBeforeLlm(session, stepIndex, logger)
+            val llmStart = System.currentTimeMillis()
             val completion = llm.completeWithFunctionsFast(context, commands)
+            plugins.fireAfterLlm(session, stepIndex, completion.usage(), System.currentTimeMillis() - llmStart, logger)
+
             when (completion) {
                 is FunctionCompletion.FunctionCall -> {
                     toolCallsMade = true
                     tokenTracker?.record(session.id, completion.usage)
                     onProgress?.invoke("Using ${completion.name}...")
                     val args = parseArgsJson(completion.argsJson)
-                    val observation = toolRegistry.execute(ToolCall(completion.name, args))
+                    val call = ToolCall(completion.name, args)
+                    plugins.fireBeforeTool(session, call, logger)
+                    val toolStart = System.currentTimeMillis()
+                    val observation = toolRegistry.execute(call)
+                    plugins.fireAfterTool(session, call, observation, System.currentTimeMillis() - toolStart, logger)
                     val obs = when (observation) {
                         is Observation.Success -> "Result: ${observation.result}"
-                        is Observation.Error -> "Error: ${observation.message}"
+                        is Observation.Error   -> "Error: ${observation.message}"
                     }
                     context.add(ChatMessage("assistant", "Used ${completion.name}"))
                     context.add(ChatMessage("user", obs))
@@ -50,13 +60,18 @@ class AgentEngine(
                     // If tool calls were made, re-invoke the standard model for a higher-quality final response.
                     // For simple queries that needed no tools, the fast model response is used directly.
                     val finalCompletion = if (toolCallsMade) {
-                        llm.completeWithFunctions(context, commands)
+                        plugins.fireBeforeLlm(session, stepIndex, logger)
+                        val start = System.currentTimeMillis()
+                        val result = llm.completeWithFunctions(context, commands)
+                        plugins.fireAfterLlm(session, stepIndex, result.usage(), System.currentTimeMillis() - start, logger)
+                        result
                     } else {
                         completion
                     }
                     val finalText = if (finalCompletion is FunctionCompletion.Text) finalCompletion.content else completion.content
                     tokenTracker?.record(session.id, finalCompletion.let { if (it is FunctionCompletion.Text) it.usage else null })
                     memory.append(session.id, Message("assistant", finalText, session.channel))
+                    plugins.fireOnResponse(session, finalText, stepIndex + 1, logger)
                     return finalText
                 }
             }
@@ -70,4 +85,51 @@ class AgentEngine(
             k to (if (v is JsonPrimitive) v.content else v.toString())
         }
     }.getOrElse { emptyMap() }
+
+    private fun FunctionCompletion.usage(): TokenUsage? = when (this) {
+        is FunctionCompletion.Text         -> usage
+        is FunctionCompletion.FunctionCall -> usage
+    }
+}
+
+// --- plugin fire helpers (file-private, swallow all exceptions) ---
+
+private suspend fun List<EnginePlugin>.fireBeforeTool(session: Session, call: ToolCall, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.beforeTool(session, call) }
+            .onFailure { log.warning("Plugin '$pluginName' beforeTool: ${it.message}") }
+    }
+}
+
+private suspend fun List<EnginePlugin>.fireAfterTool(session: Session, call: ToolCall, obs: Observation, ms: Long, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.afterTool(session, call, obs, ms) }
+            .onFailure { log.warning("Plugin '$pluginName' afterTool: ${it.message}") }
+    }
+}
+
+private suspend fun List<EnginePlugin>.fireBeforeLlm(session: Session, step: Int, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.beforeLlm(session, step) }
+            .onFailure { log.warning("Plugin '$pluginName' beforeLlm: ${it.message}") }
+    }
+}
+
+private suspend fun List<EnginePlugin>.fireAfterLlm(session: Session, step: Int, usage: TokenUsage?, ms: Long, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.afterLlm(session, step, usage, ms) }
+            .onFailure { log.warning("Plugin '$pluginName' afterLlm: ${it.message}") }
+    }
+}
+
+private suspend fun List<EnginePlugin>.fireOnResponse(session: Session, text: String, steps: Int, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.onResponse(session, text, steps) }
+            .onFailure { log.warning("Plugin '$pluginName' onResponse: ${it.message}") }
+    }
 }

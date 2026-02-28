@@ -152,4 +152,51 @@ class AgentEngineTest {
         assertEquals(300L, stats.inputTokens)
         assertEquals(130L, stats.outputTokens)
     }
+
+    @Test
+    fun `beforeTool and afterTool fire with correct args`() = runTest {
+        setupCommon()
+        val plugin = mockk<EnginePlugin>(relaxed = true)
+        coEvery { plugin.name } returns "test"
+        coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "do it"))
+        coEvery { llm.completeWithFunctionsFast(any(), any()) } returnsMany listOf(
+            FunctionCompletion.FunctionCall("shell_run", "{\"command\": \"echo hi\"}"),
+            FunctionCompletion.Text("placeholder")
+        )
+        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("done")
+        coEvery { toolRegistry.execute(any()) } returns Observation.Success("hi")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))
+        engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "do it", Channel.TELEGRAM))
+
+        coVerify { plugin.beforeTool(any(), ToolCall("shell_run", mapOf("command" to "echo hi"))) }
+        coVerify { plugin.afterTool(any(), ToolCall("shell_run", mapOf("command" to "echo hi")), Observation.Success("hi"), any()) }
+    }
+
+    @Test
+    fun `onResponse fires with final text and step count`() = runTest {
+        setupCommon()
+        val plugin = mockk<EnginePlugin>(relaxed = true)
+        coEvery { plugin.name } returns "test"
+        coEvery { llm.completeWithFunctionsFast(any(), any()) } returns FunctionCompletion.Text("Hello!")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))
+        engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+
+        coVerify { plugin.onResponse(any(), "Hello!", any()) }
+    }
+
+    @Test
+    fun `plugin exception does not fail the request`() = runTest {
+        setupCommon()
+        val plugin = mockk<EnginePlugin>(relaxed = true)
+        coEvery { plugin.name } returns "bad-plugin"
+        coEvery { plugin.onResponse(any(), any(), any()) } throws RuntimeException("plugin exploded")
+        coEvery { llm.completeWithFunctionsFast(any(), any()) } returns FunctionCompletion.Text("Hello!")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))
+        val result = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+
+        assertEquals("Hello!", result)
+    }
 }
