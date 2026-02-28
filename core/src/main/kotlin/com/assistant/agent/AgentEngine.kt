@@ -31,53 +31,61 @@ class AgentEngine(
         val context = assembler.build(session, message).toMutableList()
         val commands = toolRegistry.allCommands()
 
-        var toolCallsMade = false
-        repeat(maxSteps) { stepIndex ->
-            plugins.fireBeforeLlm(session, stepIndex, logger)
-            val llmStart = System.currentTimeMillis()
-            val completion = llm.completeWithFunctionsFast(context, commands)
-            plugins.fireAfterLlm(session, stepIndex, completion.usage(), System.currentTimeMillis() - llmStart, logger)
+        try {
+            var toolCallsMade = false
+            repeat(maxSteps) { stepIndex ->
+                plugins.fireBeforeLlm(session, stepIndex, logger)
+                val llmStart = System.currentTimeMillis()
+                val completion = llm.completeWithFunctionsFast(context, commands)
+                plugins.fireAfterLlm(session, stepIndex, completion.usage(), System.currentTimeMillis() - llmStart, logger)
 
-            when (completion) {
-                is FunctionCompletion.FunctionCall -> {
-                    toolCallsMade = true
-                    tokenTracker?.record(session.id, completion.usage)
-                    onProgress?.invoke("Using ${completion.name}...")
-                    val args = parseArgsJson(completion.argsJson)
-                    val call = ToolCall(completion.name, args)
-                    plugins.fireBeforeTool(session, call, logger)
-                    val toolStart = System.currentTimeMillis()
-                    val observation = toolRegistry.execute(call)
-                    plugins.fireAfterTool(session, call, observation, System.currentTimeMillis() - toolStart, logger)
-                    val obs = when (observation) {
-                        is Observation.Success -> "Result: ${observation.result}"
-                        is Observation.Error   -> "Error: ${observation.message}"
+                when (completion) {
+                    is FunctionCompletion.FunctionCall -> {
+                        toolCallsMade = true
+                        tokenTracker?.record(session.id, completion.usage)
+                        onProgress?.invoke("Using ${completion.name}...")
+                        val args = parseArgsJson(completion.argsJson)
+                        val call = ToolCall(completion.name, args)
+                        plugins.fireBeforeTool(session, call, logger)
+                        val toolStart = System.currentTimeMillis()
+                        val observation = toolRegistry.execute(call)
+                        plugins.fireAfterTool(session, call, observation, System.currentTimeMillis() - toolStart, logger)
+                        val obs = when (observation) {
+                            is Observation.Success -> "Result: ${observation.result}"
+                            is Observation.Error   -> "Error: ${observation.message}"
+                        }
+                        context.add(ChatMessage("assistant", "Used ${completion.name}"))
+                        context.add(ChatMessage("user", obs))
                     }
-                    context.add(ChatMessage("assistant", "Used ${completion.name}"))
-                    context.add(ChatMessage("user", obs))
-                }
-                is FunctionCompletion.Text -> {
-                    // If tool calls were made, re-invoke the standard model for a higher-quality final response.
-                    // For simple queries that needed no tools, the fast model response is used directly.
-                    val finalCompletion = if (toolCallsMade) {
-                        plugins.fireBeforeLlm(session, stepIndex, logger)
-                        val start = System.currentTimeMillis()
-                        val result = llm.completeWithFunctions(context, commands)
-                        plugins.fireAfterLlm(session, stepIndex, result.usage(), System.currentTimeMillis() - start, logger)
-                        result
-                    } else {
-                        completion
+                    is FunctionCompletion.Text -> {
+                        // If tool calls were made, re-invoke the standard model for a higher-quality final response.
+                        // For simple queries that needed no tools, the fast model response is used directly.
+                        val finalCompletion = if (toolCallsMade) {
+                            // Final synthesis call — fires LLM hooks with the same stepIndex as the
+                            // reasoning step that produced the Text completion. This is intentional:
+                            // the synthesis is a continuation of the same step, not a new ReAct iteration.
+                            plugins.fireBeforeLlm(session, stepIndex, logger)
+                            val start = System.currentTimeMillis()
+                            val result = llm.completeWithFunctions(context, commands)
+                            plugins.fireAfterLlm(session, stepIndex, result.usage(), System.currentTimeMillis() - start, logger)
+                            result
+                        } else {
+                            completion
+                        }
+                        val finalText = if (finalCompletion is FunctionCompletion.Text) finalCompletion.content else completion.content
+                        tokenTracker?.record(session.id, finalCompletion.let { if (it is FunctionCompletion.Text) it.usage else null })
+                        memory.append(session.id, Message("assistant", finalText, session.channel))
+                        plugins.fireOnResponse(session, finalText, stepIndex + 1, logger)
+                        return finalText
                     }
-                    val finalText = if (finalCompletion is FunctionCompletion.Text) finalCompletion.content else completion.content
-                    tokenTracker?.record(session.id, finalCompletion.let { if (it is FunctionCompletion.Text) it.usage else null })
-                    memory.append(session.id, Message("assistant", finalText, session.channel))
-                    plugins.fireOnResponse(session, finalText, stepIndex + 1, logger)
-                    return finalText
                 }
             }
-        }
 
-        return "I reached the maximum reasoning steps. Please try a simpler request."
+            return "I reached the maximum reasoning steps. Please try a simpler request."
+        } catch (e: Exception) {
+            plugins.fireOnError(session, e, logger)
+            throw e
+        }
     }
 
     private fun parseArgsJson(json: String): Map<String, Any> = runCatching {
@@ -131,5 +139,13 @@ private suspend fun List<EnginePlugin>.fireOnResponse(session: Session, text: St
         val pluginName = plugin.name
         runCatching { plugin.onResponse(session, text, steps) }
             .onFailure { log.warning("Plugin '$pluginName' onResponse: ${it.message}") }
+    }
+}
+
+private suspend fun List<EnginePlugin>.fireOnError(session: Session, error: Exception, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.onError(session, error) }
+            .onFailure { log.warning("Plugin '$pluginName' onError: ${it.message}") }
     }
 }
