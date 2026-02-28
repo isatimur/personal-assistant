@@ -12,6 +12,7 @@ dependencies {
     implementation("io.grpc:grpc-kotlin-stub:1.4.1")
     implementation("io.grpc:grpc-netty-shaded:1.63.0")
     implementation("io.grpc:grpc-stub:1.63.0")
+    implementation("io.grpc:grpc-protobuf:1.63.0")
     implementation("com.google.protobuf:protobuf-kotlin:3.25.3")
     implementation("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("io.grpc:grpc-testing:1.63.0")
