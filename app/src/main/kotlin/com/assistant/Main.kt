@@ -139,7 +139,7 @@ fun main() {
 
         val finalStacks = if (routing.messaging.enabled) {
             baseStacks.mapValues { (agentName, stack) ->
-                val allTools = stack.tools + AskAgentTool(bus, agentName, routing.messaging.timeoutMs)
+                val allTools = stack.tools + AskAgentTool(bus, agentName, routing.messaging.timeoutMs, routing.messaging.ephemeral)
                 val newRegistry = ToolRegistry(allTools)
                 val newAssembler = ContextAssembler(stack.memory, newRegistry, config.memory.windowSize, config.memory.searchLimit, stack.workspace)
                 val newEngine = AgentEngine(llm, stack.memory, newRegistry, newAssembler, compactionService = stack.compaction, tokenTracker = stack.tokenTracker, plugins = stack.plugins)
@@ -151,8 +151,11 @@ fun main() {
 
         // Register all agents with the bus so they can receive inter-agent messages
         finalStacks.forEach { (agentName, stack) ->
-            bus.registerAgent(agentName) { from, text ->
-                val sessionKey = "AGENT:$from→$agentName"
+            bus.registerAgent(agentName) { from, text, ephemeral ->
+                val sessionKey = if (ephemeral)
+                    "AGENT:$from→$agentName:${java.util.UUID.randomUUID()}"
+                else
+                    "AGENT:$from→$agentName"
                 val session = Session(id = sessionKey, userId = from, channel = Channel.AGENT)
                 stack.engine.process(session, Message(sender = from, text = text, channel = Channel.AGENT))
             }

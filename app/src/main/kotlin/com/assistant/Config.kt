@@ -8,7 +8,8 @@ import java.io.File
 
 @Serializable data class AgentMessagingConfig(
     val enabled: Boolean = true,
-    @SerialName("timeout-ms") val timeoutMs: Long = 30_000
+    @SerialName("timeout-ms") val timeoutMs: Long = 30_000,
+    val ephemeral: Boolean = false
 )
 
 @Serializable data class RoutingConfig(

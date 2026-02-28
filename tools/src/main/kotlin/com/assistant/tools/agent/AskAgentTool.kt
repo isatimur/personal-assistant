@@ -10,7 +10,8 @@ import com.assistant.ports.ToolPort
 class AskAgentTool(
     private val bus: AgentBus,
     private val callerName: String,
-    private val timeoutMs: Long = 30_000
+    private val timeoutMs: Long = 30_000,
+    private val ephemeral: Boolean = false
 ) : ToolPort {
 
     override val name = "agent"
@@ -33,6 +34,6 @@ class AskAgentTool(
         val message = call.arguments["message"]?.toString()
             ?: return Observation.Error("Missing 'message' argument")
         if (to == callerName) return Observation.Error("Agent cannot message itself")
-        return Observation.Success(bus.request(from = callerName, to = to, message = message, timeoutMs = timeoutMs))
+        return Observation.Success(bus.request(from = callerName, to = to, message = message, timeoutMs = timeoutMs, ephemeral = ephemeral))
     }
 }

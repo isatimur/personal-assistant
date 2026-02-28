@@ -16,14 +16,14 @@ class AskAgentToolTest {
 
     @Test
     fun `executes agent_ask command and returns response`() = runTest {
-        coEvery { bus.request(from = "personal", to = "work-agent", message = "What is 2+2?", timeoutMs = any()) } returns "4"
+        coEvery { bus.request(from = "personal", to = "work-agent", message = "What is 2+2?", timeoutMs = any(), ephemeral = any()) } returns "4"
 
         val tool = AskAgentTool(bus, callerName = "personal")
         val result = tool.execute(ToolCall("agent_ask", mapOf("to" to "work-agent", "message" to "What is 2+2?")))
 
         assertTrue(result is Observation.Success)
         assertEquals("4", (result as Observation.Success).result)
-        coVerify { bus.request(from = "personal", to = "work-agent", message = "What is 2+2?", timeoutMs = any()) }
+        coVerify { bus.request(from = "personal", to = "work-agent", message = "What is 2+2?", timeoutMs = any(), ephemeral = any()) }
     }
 
     @Test
@@ -55,12 +55,23 @@ class AskAgentToolTest {
 
     @Test
     fun `passes configured timeout to bus request`() = runTest {
-        coEvery { bus.request(from = "personal", to = "work-agent", message = "ping", timeoutMs = 5_000) } returns "pong"
+        coEvery { bus.request(from = "personal", to = "work-agent", message = "ping", timeoutMs = 5_000, ephemeral = any()) } returns "pong"
 
         val tool = AskAgentTool(bus, callerName = "personal", timeoutMs = 5_000)
         val result = tool.execute(ToolCall("agent_ask", mapOf("to" to "work-agent", "message" to "ping")))
 
         assertTrue(result is Observation.Success)
-        coVerify { bus.request(from = "personal", to = "work-agent", message = "ping", timeoutMs = 5_000) }
+        coVerify { bus.request(from = "personal", to = "work-agent", message = "ping", timeoutMs = 5_000, ephemeral = any()) }
+    }
+
+    @Test
+    fun `passes ephemeral flag to bus`() = runTest {
+        coEvery { bus.request(from = "personal", to = "work-agent", message = "ping", timeoutMs = any(), ephemeral = true) } returns "pong"
+
+        val tool = AskAgentTool(bus, callerName = "personal", ephemeral = true)
+        val result = tool.execute(ToolCall("agent_ask", mapOf("to" to "work-agent", "message" to "ping")))
+
+        assertTrue(result is Observation.Success)
+        coVerify { bus.request(from = "personal", to = "work-agent", message = "ping", timeoutMs = any(), ephemeral = true) }
     }
 }
