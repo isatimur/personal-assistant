@@ -69,3 +69,13 @@ interface ChannelPort {
     /** Send a proactive/outbound message to an existing session. */
     fun send(sessionId: String, text: String)
 }
+
+interface EnginePlugin {
+    val name: String get() = this::class.simpleName ?: "plugin"
+    suspend fun beforeTool(session: Session, call: ToolCall) {}
+    suspend fun afterTool(session: Session, call: ToolCall, result: Observation, durationMs: Long) {}
+    suspend fun beforeLlm(session: Session, stepIndex: Int) {}
+    suspend fun afterLlm(session: Session, stepIndex: Int, usage: TokenUsage?, durationMs: Long) {}
+    suspend fun onResponse(session: Session, text: String, steps: Int) {}
+    suspend fun onError(session: Session, error: Exception) {}
+}
