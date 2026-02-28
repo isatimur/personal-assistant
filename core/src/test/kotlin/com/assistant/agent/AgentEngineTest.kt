@@ -6,6 +6,7 @@ import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.assertThrows
 
 class AgentEngineTest {
     private val llm = mockk<LlmPort>()
@@ -157,7 +158,6 @@ class AgentEngineTest {
     fun `beforeTool and afterTool fire with correct args`() = runTest {
         setupCommon()
         val plugin = mockk<EnginePlugin>(relaxed = true)
-        coEvery { plugin.name } returns "test"
         coEvery { assembler.build(any(), any()) } returns listOf(ChatMessage("user", "do it"))
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returnsMany listOf(
             FunctionCompletion.FunctionCall("shell_run", "{\"command\": \"echo hi\"}"),
@@ -177,7 +177,6 @@ class AgentEngineTest {
     fun `onResponse fires with final text and step count`() = runTest {
         setupCommon()
         val plugin = mockk<EnginePlugin>(relaxed = true)
-        coEvery { plugin.name } returns "test"
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returns FunctionCompletion.Text("Hello!")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))
@@ -190,7 +189,6 @@ class AgentEngineTest {
     fun `plugin exception does not fail the request`() = runTest {
         setupCommon()
         val plugin = mockk<EnginePlugin>(relaxed = true)
-        coEvery { plugin.name } returns "bad-plugin"
         coEvery { plugin.onResponse(any(), any(), any()) } throws RuntimeException("plugin exploded")
         coEvery { llm.completeWithFunctionsFast(any(), any()) } returns FunctionCompletion.Text("Hello!")
 
@@ -198,5 +196,31 @@ class AgentEngineTest {
         val result = engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
 
         assertEquals("Hello!", result)
+    }
+
+    @Test
+    fun `onError fires when LLM throws`() = runTest {
+        setupCommon()
+        val plugin = mockk<EnginePlugin>(relaxed = true)
+        coEvery { llm.completeWithFunctionsFast(any(), any()) } throws RuntimeException("LLM down")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))
+        assertThrows<RuntimeException> {
+            engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+        }
+        coVerify { plugin.onError(any(), any()) }
+    }
+
+    @Test
+    fun `beforeLlm and afterLlm fire for each LLM call`() = runTest {
+        setupCommon()
+        val plugin = mockk<EnginePlugin>(relaxed = true)
+        coEvery { llm.completeWithFunctionsFast(any(), any()) } returns FunctionCompletion.Text("Hello!")
+
+        val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))
+        engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
+
+        coVerify(atLeast = 1) { plugin.beforeLlm(any(), any()) }
+        coVerify(atLeast = 1) { plugin.afterLlm(any(), any(), any(), any()) }
     }
 }
