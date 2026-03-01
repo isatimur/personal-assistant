@@ -27,7 +27,7 @@ import kotlin.math.*
  * being closed. This is required for SQLite in-memory databases, which are scoped to a
  * single JDBC connection — closing the connection drops all in-memory data.
  */
-private class SingleConnectionDataSource(url: String) : DataSource {
+internal class SingleConnectionDataSource(url: String) : DataSource {
     private val realConnection: Connection = DriverManager.getConnection(url)
 
     /** Proxy connection that ignores close() so Exposed cannot destroy the in-memory DB. */

@@ -12,12 +12,14 @@ import com.assistant.llm.EmbeddingConfig
 import com.assistant.llm.LangChain4jEmbeddingProvider
 import com.assistant.llm.LangChain4jProvider
 import com.assistant.llm.ModelConfig
+import com.assistant.memory.FeedbackStore
 import com.assistant.memory.SqliteMemoryStore
 import com.assistant.ports.EnginePlugin
 import com.assistant.ports.ToolPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.discord.DiscordAdapter
 import com.assistant.telegram.TelegramAdapter
+import com.assistant.tools.MetricsTool
 import com.assistant.tools.agent.AskAgentTool
 import com.assistant.tools.email.EmailConfig
 import com.assistant.tools.email.EmailTool
@@ -76,6 +78,7 @@ fun main() {
     val pluginLoader = PluginLoader()
 
     val globalDir = File(System.getProperty("user.home"), ".assistant")
+    val defaultUserId = "default"
 
     val embeddingPort = config.embedding?.let {
         LangChain4jEmbeddingProvider(EmbeddingConfig(it.provider, it.model, it.apiKey, it.baseUrl))
@@ -114,19 +117,36 @@ fun main() {
 
     val defaultPlugins: List<EnginePlugin> = listOf(LoggingPlugin())
 
-    val (gateway, activeMemory, activeTokenTracker) = if (config.routing == null) {
-        // === LEGACY PATH (unchanged behavior) ===
+    lateinit var gateway: Gateway
+    lateinit var activeMemory: SqliteMemoryStore
+    lateinit var activeTokenTracker: TokenTracker
+    var activeFeedbackPlugin: FeedbackPlugin? = null
+    var activeFeedbackStore: FeedbackStore? = null
+
+    if (config.routing == null) {
+        // === LEGACY PATH ===
         val dbPath = config.memory.dbPath.replace("~", System.getProperty("user.home"))
         File(dbPath).parentFile.mkdirs()
         val memory = SqliteMemoryStore(dbPath, embeddingPort).also { it.init() }
-        val tools = if (config.tools.knowledge.enabled) baseTools + KnowledgeIngestTool(memory) else baseTools
+        val feedbackStore = FeedbackStore(dbPath).also { it.init() }
+        val feedbackPlugin = FeedbackPlugin(feedbackStore, defaultUserId)
+        activeFeedbackStore = feedbackStore
+        activeFeedbackPlugin = feedbackPlugin
+        val tokenTracker = TokenTracker()
+        val metricsTool = MetricsTool(feedbackStore, tokenTracker, defaultUserId)
+        val plugins: List<EnginePlugin> = listOf(LoggingPlugin(), feedbackPlugin)
+        val tools: List<ToolPort> = buildList {
+            addAll(if (config.tools.knowledge.enabled) baseTools + KnowledgeIngestTool(memory) else baseTools)
+            add(metricsTool)
+        }
         val registry = ToolRegistry(tools)
         val workspace = WorkspaceLoader(globalDir)
         val assembler = ContextAssembler(memory, registry, config.memory.windowSize, config.memory.searchLimit, workspace)
         val compaction = CompactionService(llm, memory, threshold = 15)
-        val tokenTracker = TokenTracker()
-        val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker, plugins = defaultPlugins)
-        Triple(Gateway(engine), memory, tokenTracker)
+        val engine = AgentEngine(llm, memory, registry, assembler, compactionService = compaction, tokenTracker = tokenTracker, plugins = plugins)
+        gateway = Gateway(engine)
+        activeMemory = memory
+        activeTokenTracker = tokenTracker
     } else {
         // === MULTI-AGENT ROUTING PATH ===
         val routing = config.routing
@@ -194,11 +214,12 @@ fun main() {
 
         val defaultStack = finalStacks[routing.default]!!
         val engineByChannel = routing.channels.mapValues { (_, name) -> finalStacks[name]!!.engine }
-        val gw = Gateway(defaultStack.engine, engineByChannel)
+        gateway = Gateway(defaultStack.engine, engineByChannel)
 
         val telegramAgentName = routing.channels["telegram"] ?: routing.default
         val telegramStack = finalStacks[telegramAgentName]!!
-        Triple(gw, telegramStack.memory, telegramStack.tokenTracker)
+        activeMemory = telegramStack.memory
+        activeTokenTracker = telegramStack.tokenTracker
     }
 
     val workspace = WorkspaceLoader(globalDir)
@@ -249,8 +270,31 @@ fun main() {
         chatIdFile = File(workspace.workspaceDir, "last-chat-id")
     )
 
+    // Wire reflection runner (legacy path only)
+    if (activeFeedbackStore != null) {
+        val reflectionCfg = ReflectionServiceConfig(
+            enabled       = config.reflection.enabled,
+            cron          = config.reflection.cron,
+            lookbackHours = config.reflection.lookbackHours,
+            updateSoul    = config.reflection.updateSoul,
+            updateSkills  = config.reflection.updateSkills,
+            updateUser    = config.reflection.updateUser,
+            dryRun        = config.reflection.dryRun
+        )
+        val reflectionService = ReflectionService(
+            llm           = llm,
+            memory        = activeMemory,
+            feedbackStore = activeFeedbackStore!!,
+            workspace     = workspace,
+            config        = reflectionCfg,
+            notifyFn      = { text -> workspace.lastChatId()?.let { chatId -> telegram.sendProactive(chatId, text) } }
+        )
+        ReflectionRunner(reflectionCfg, reflectionService, defaultUserId).start()
+    }
+
     println("Personal assistant starting... Send a message on Telegram!")
     telegram.start { sessionId, userId, text, imageUrl ->
+        activeFeedbackPlugin?.recordUserMessage(sessionId, text)
         gateway.handle(Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl))
     }
     heartbeat.start()

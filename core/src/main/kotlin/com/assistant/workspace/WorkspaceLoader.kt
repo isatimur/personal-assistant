@@ -3,6 +3,8 @@ package com.assistant.workspace
 import com.assistant.agent.AgentProfile
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class AgentIdentity(val name: String, val emoji: String, val vibe: String)
@@ -13,6 +15,7 @@ class WorkspaceLoader(
     private val fallbackDir: File? = null
 ) {
     private val fallback: WorkspaceLoader? = fallbackDir?.let { WorkspaceLoader(it) }
+    private val writeMutex = Mutex()
 
     private data class Frontmatter(val meta: Map<String, String>, val body: String)
 
@@ -118,6 +121,49 @@ class WorkspaceLoader(
         val result = lines.dropLastWhile { it.isBlank() }.joinToString("\n") + "\n"
         file.parentFile?.mkdirs()
         file.writeText(result)
+    }
+
+    suspend fun appendToSoul(text: String): Unit = writeMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val file = File(workspaceDir, "Soul.md")
+            val existing = if (file.exists()) file.readText() else ""
+            if (existing.contains(text.trim())) return@withContext
+            file.parentFile?.mkdirs()
+            file.writeText(existing.trimEnd() + "\n\n" + text.trim() + "\n")
+        }
+    }
+
+    suspend fun saveSkill(
+        name: String,
+        description: String,
+        triggers: List<String>,
+        body: String
+    ): Unit = writeMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val dir = File(workspaceDir, "skills").also { it.mkdirs() }
+            val filename = name.lowercase().replace(Regex("[^a-z0-9]+"), "-") + ".md"
+            val content = buildString {
+                appendLine("---")
+                appendLine("name: $name")
+                appendLine("description: $description")
+                appendLine("enabled: true")
+                if (triggers.isNotEmpty()) appendLine("triggers: ${triggers.joinToString(", ")}")
+                appendLine("---")
+                appendLine()
+                append(body)
+            }
+            File(dir, filename).writeText(content)
+        }
+    }
+
+    suspend fun appendToBootstrap(filename: String, text: String): Unit = writeMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val dir = File(workspaceDir, "bootstrap").also { it.mkdirs() }
+            val file = File(dir, filename)
+            val existing = if (file.exists()) file.readText() else ""
+            if (existing.contains(text.trim())) return@withContext
+            file.writeText(existing.trimEnd() + "\n\n" + text.trim() + "\n")
+        }
     }
 
     fun lastChatId(): Long? {
