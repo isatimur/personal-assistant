@@ -17,17 +17,13 @@ import java.io.File
     val port: Int = 9090
 )
 
-@Serializable data class RemoteAgentEntry(
-    val address: String   // "host:port"
-)
-
 @Serializable data class RoutingConfig(
     val channels: Map<String, String> = emptyMap(),  // channel name (lowercase) → agent name
     val default: String = "default",
     val messaging: AgentMessagingConfig = AgentMessagingConfig(),
     val grpc: GrpcServerConfig = GrpcServerConfig(),
     @SerialName("remote-agents") val remoteAgents: Map<String, String> = emptyMap(),
-    @SerialName("discovery") val discovery: String = "static"  // "static" | "filesystem"
+    val discovery: String = "static"  // "static" | "filesystem"
 )
 
 @Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig(), val routing: RoutingConfig? = null)
