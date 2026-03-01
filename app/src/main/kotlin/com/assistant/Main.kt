@@ -133,9 +133,23 @@ fun main() {
         val allAgentNames = (routing.channels.values + routing.default).toSet()
         val baseStacks = allAgentNames.associateWith { buildAgentEngine(it, config, llm, baseTools, embeddingPort, globalDir, defaultPlugins) }
 
-        // Create the inter-agent bus and rebuild engines with AskAgentTool when messaging is enabled
+        // Determine bus type: gRPC (cross-process) or in-process
         val busScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val bus = InProcessAgentBus(busScope)
+        val bus: AgentBus
+        val grpcServer: AgentGrpcServer?
+
+        if (routing.grpc.enabled) {
+            val registry: AgentRegistry = when (routing.discovery) {
+                "filesystem" -> FileSystemAgentRegistry()
+                else -> StaticAgentRegistry(routing.remoteAgents)
+            }
+            bus = GrpcAgentBus(registry)
+            val localAgentName = baseStacks.keys.first()
+            grpcServer = AgentGrpcServer(routing.grpc.port, registry, localAgentName)
+        } else {
+            bus = InProcessAgentBus(busScope)
+            grpcServer = null
+        }
 
         val finalStacks = if (routing.messaging.enabled) {
             baseStacks.mapValues { (agentName, stack) ->
@@ -149,9 +163,9 @@ fun main() {
             baseStacks
         }
 
-        // Register all agents with the bus so they can receive inter-agent messages
+        // Register all agents on the bus (in-process) or gRPC server
         finalStacks.forEach { (agentName, stack) ->
-            bus.registerAgent(agentName) { from, text, ephemeral ->
+            val handler: suspend (String, String, Boolean) -> String = { from, text, ephemeral ->
                 val sessionKey = if (ephemeral)
                     "AGENT:$from→$agentName:${java.util.UUID.randomUUID()}"
                 else
@@ -159,7 +173,15 @@ fun main() {
                 val session = Session(id = sessionKey, userId = from, channel = Channel.AGENT)
                 stack.engine.process(session, Message(sender = from, text = text, channel = Channel.AGENT))
             }
+            if (routing.grpc.enabled) {
+                grpcServer!!.registerLocalAgent(agentName, handler)
+            } else {
+                bus.registerAgent(agentName, handler)
+            }
         }
+
+        // Start gRPC server after all agents are registered
+        grpcServer?.start()
 
         val defaultStack = finalStacks[routing.default]!!
         val engineByChannel = routing.channels.mapValues { (_, name) -> finalStacks[name]!!.engine }
