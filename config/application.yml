@@ -79,7 +79,7 @@ reflection:
   update-soul: true
   update-skills: true
   update-user: true
-  dry-run: true           # proposes changes via Telegram before applying
+  dry-run: false          # applies changes directly to workspace files
 
 # Multi-agent routing: bind each channel to a named agent.
 # Each agent gets its own workspace (under ~/.assistant/agents/<name>/) and memory DB.
