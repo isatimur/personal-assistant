@@ -22,13 +22,15 @@ class AgentEngine(
         message: Message,
         onProgress: ((String) -> Unit)? = null
     ): String {
+        // Build context BEFORE appending to memory so history doesn't contain a duplicate
+        // of the current user message (assembler adds it explicitly at the end).
+        val context = assembler.build(session, message).toMutableList()
         memory.append(session.id, message)
         try {
             compactionService?.maybeCompact(session.id, session.userId)
         } catch (e: Exception) {
             logger.warning("Compaction failed for session ${session.id}: ${e.message}")
         }
-        val context = assembler.build(session, message).toMutableList()
         val commands = toolRegistry.allCommands()
 
         try {
