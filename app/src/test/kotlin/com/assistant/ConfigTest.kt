@@ -1,5 +1,6 @@
 package com.assistant
 
+import com.charleskorn.kaml.Yaml
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -24,6 +25,21 @@ class ConfigTest {
         tools:
           email:
             enabled: false
+    """.trimIndent()
+
+    private fun minimalAppConfig(routingBlock: String) = """
+        telegram:
+          token: "PLACEHOLDER"
+        llm:
+          provider: openai
+          model: gpt-4o
+          api-key: "PLACEHOLDER"
+        memory:
+          db-path: /tmp/test.db
+          window-size: 20
+        tools: {}
+        routing:
+${routingBlock.trimIndent().lines().joinToString("\n") { "          $it" }}
     """.trimIndent()
 
     @Test
@@ -63,5 +79,42 @@ class ConfigTest {
         val config = loadConfig(base.absolutePath, secrets.absolutePath)
         assertEquals("real-token", config.telegram.token)
         assertEquals("PLACEHOLDER", config.llm.apiKey) // llm not in secrets
+    }
+
+    @Test
+    fun `grpc defaults to disabled on port 9090`() {
+        val yaml = minimalAppConfig("default: personal")
+        val config = Yaml.default.decodeFromString(AppConfig.serializer(), yaml)
+        assertFalse(config.routing!!.grpc.enabled)
+        assertEquals(9090, config.routing!!.grpc.port)
+    }
+
+    @Test
+    fun `grpc config parses enabled and port`() {
+        val yaml = minimalAppConfig("""
+            grpc:
+              enabled: true
+              port: 8080
+        """)
+        val config = Yaml.default.decodeFromString(AppConfig.serializer(), yaml)
+        assertTrue(config.routing!!.grpc.enabled)
+        assertEquals(8080, config.routing!!.grpc.port)
+    }
+
+    @Test
+    fun `remote-agents parsed from yaml`() {
+        val yaml = minimalAppConfig("""
+            remote-agents:
+              work-agent: "localhost:9091"
+        """)
+        val config = Yaml.default.decodeFromString(AppConfig.serializer(), yaml)
+        assertEquals("localhost:9091", config.routing!!.remoteAgents["work-agent"])
+    }
+
+    @Test
+    fun `discovery defaults to static`() {
+        val yaml = minimalAppConfig("default: personal")
+        val config = Yaml.default.decodeFromString(AppConfig.serializer(), yaml)
+        assertEquals("static", config.routing!!.discovery)
     }
 }
