@@ -26,7 +26,7 @@ import java.io.File
     val discovery: String = "static"  // "static" | "filesystem"
 )
 
-@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig(), val routing: RoutingConfig? = null)
+@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig(), val routing: RoutingConfig? = null, val reflection: ReflectionConfig = ReflectionConfig())
 @Serializable data class TelegramConfig(val token: String, @SerialName("timeout-ms") val timeoutMs: Long = 120_000)
 @Serializable data class LlmConfig(val provider: String, val model: String, @SerialName("api-key") val apiKey: String? = null, @SerialName("base-url") val baseUrl: String? = null, @SerialName("fast-model") val fastModel: String? = null)
 @Serializable data class MemoryConfig(@SerialName("db-path") val dbPath: String, @SerialName("window-size") val windowSize: Int, @SerialName("search-limit") val searchLimit: Int = 5)
@@ -45,6 +45,7 @@ import java.io.File
 @Serializable data class FileSystemConfig(@SerialName("allowed-paths") val allowedPaths: List<String> = listOf("~"))
 @Serializable data class HeartbeatConfig(val enabled: Boolean = false, val every: String = "1h", val time: String? = null, val cron: String? = null, val agents: List<HeartbeatAgentConfig> = emptyList(), val prompt: String = "Check if there's anything proactive you should do.")
 @Serializable data class HeartbeatAgentConfig(val name: String, val cron: String, val prompt: String, val timezone: String = "")
+@Serializable data class ReflectionConfig(val enabled: Boolean = false, val cron: String = "0 23 * * *", @SerialName("lookback-hours") val lookbackHours: Int = 24, @SerialName("update-soul") val updateSoul: Boolean = true, @SerialName("update-skills") val updateSkills: Boolean = true, @SerialName("update-user") val updateUser: Boolean = true, @SerialName("dry-run") val dryRun: Boolean = true)
 
 // Secrets overlay
 @Serializable data class TelegramSecrets(val token: String? = null)
