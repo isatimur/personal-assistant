@@ -137,6 +137,7 @@ fun main() {
         val busScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val bus: AgentBus
         val grpcServer: AgentGrpcServer?
+        val localAgentName: String?
 
         if (routing.grpc.enabled) {
             val registry: AgentRegistry = when (routing.discovery) {
@@ -144,11 +145,13 @@ fun main() {
                 else -> StaticAgentRegistry(routing.remoteAgents)
             }
             bus = GrpcAgentBus(registry)
-            val localAgentName = baseStacks.keys.first()
+            localAgentName = baseStacks.keys.firstOrNull()
+                ?: error("gRPC mode requires at least one agent in routing config")
             grpcServer = AgentGrpcServer(routing.grpc.port, registry, localAgentName)
         } else {
             bus = InProcessAgentBus(busScope)
             grpcServer = null
+            localAgentName = null
         }
 
         val finalStacks = if (routing.messaging.enabled) {
@@ -163,19 +166,25 @@ fun main() {
             baseStacks
         }
 
-        // Register all agents on the bus (in-process) or gRPC server
-        finalStacks.forEach { (agentName, stack) ->
-            val handler: suspend (String, String, Boolean) -> String = { from, text, ephemeral ->
-                val sessionKey = if (ephemeral)
-                    "AGENT:$from→$agentName:${java.util.UUID.randomUUID()}"
-                else
-                    "AGENT:$from→$agentName"
+        // Register agents on the bus: gRPC mode registers only the local agent (one server = one local agent);
+        // in-process mode registers all agents.
+        if (routing.grpc.enabled) {
+            val localStack = finalStacks[localAgentName!!]!!
+            val localHandler: suspend (String, String, Boolean) -> String = { from, text, ephemeral ->
+                val sessionKey = if (ephemeral) "AGENT:$from→$localAgentName:${java.util.UUID.randomUUID()}"
+                                 else "AGENT:$from→$localAgentName"
                 val session = Session(id = sessionKey, userId = from, channel = Channel.AGENT)
-                stack.engine.process(session, Message(sender = from, text = text, channel = Channel.AGENT))
+                localStack.engine.process(session, Message(sender = from, text = text, channel = Channel.AGENT))
             }
-            if (routing.grpc.enabled) {
-                grpcServer!!.registerLocalAgent(agentName, handler)
-            } else {
+            grpcServer!!.registerLocalAgent(localAgentName, localHandler)
+        } else {
+            finalStacks.forEach { (agentName, stack) ->
+                val handler: suspend (String, String, Boolean) -> String = { from, text, ephemeral ->
+                    val sessionKey = if (ephemeral) "AGENT:$from→$agentName:${java.util.UUID.randomUUID()}"
+                                     else "AGENT:$from→$agentName"
+                    val session = Session(id = sessionKey, userId = from, channel = Channel.AGENT)
+                    stack.engine.process(session, Message(sender = from, text = text, channel = Channel.AGENT))
+                }
                 bus.registerAgent(agentName, handler)
             }
         }

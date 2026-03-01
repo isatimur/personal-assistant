@@ -42,8 +42,11 @@ class GrpcAgentBus(
     private fun buildChannel(name: String): ManagedChannel? {
         val address = registry.resolve(name) ?: return null
         val parts = address.split(":")
+        require(parts.size == 2) { "Invalid agent address format for '$name': '$address' (expected 'host:port')" }
+        val port = parts[1].toIntOrNull()
+            ?: error("Invalid port in agent address for '$name': '${parts[1]}'")
         return ManagedChannelBuilder
-            .forAddress(parts[0], parts[1].toInt())
+            .forAddress(parts[0], port)
             .usePlaintext()
             .build()
     }
