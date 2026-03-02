@@ -26,7 +26,7 @@ memory:
 
 tools:
   shell:
-    timeout-seconds: 30
+    timeout-seconds: 120
     max-output-chars: 10000
   web:
     max-content-chars: 8000
