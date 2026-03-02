@@ -22,6 +22,7 @@ class AgentEngine(
         message: Message,
         onProgress: ((String) -> Unit)? = null
     ): String {
+        plugins.fireOnInput(session, message, logger)
         // Build context BEFORE appending to memory so history doesn't contain a duplicate
         // of the current user message (assembler adds it explicitly at the end).
         val context = assembler.build(session, message).toMutableList()
@@ -103,6 +104,14 @@ class AgentEngine(
 }
 
 // --- plugin fire helpers (file-private, swallow all exceptions) ---
+
+private suspend fun List<EnginePlugin>.fireOnInput(session: Session, message: Message, log: Logger) {
+    for (plugin in this) {
+        val pluginName = plugin.name
+        runCatching { plugin.onInput(session, message) }
+            .onFailure { log.warning("Plugin '$pluginName' onInput: ${it.message}") }
+    }
+}
 
 private suspend fun List<EnginePlugin>.fireBeforeTool(session: Session, call: ToolCall, log: Logger) {
     for (plugin in this) {

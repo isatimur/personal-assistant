@@ -72,6 +72,7 @@ interface ChannelPort {
 
 interface EnginePlugin {
     val name: String get() = this::class.simpleName ?: "plugin"
+    suspend fun onInput(session: Session, message: Message) {}
     suspend fun beforeTool(session: Session, call: ToolCall) {}
     suspend fun afterTool(session: Session, call: ToolCall, result: Observation, durationMs: Long) {}
     suspend fun beforeLlm(session: Session, stepIndex: Int) {}

@@ -1,6 +1,7 @@
 package com.assistant.agent
 
 import com.assistant.domain.Channel
+import com.assistant.domain.Message
 import com.assistant.domain.Observation
 import com.assistant.domain.Session
 import com.assistant.domain.ToolCall
@@ -92,11 +93,14 @@ class FeedbackPluginTest {
         coVerify(exactly = 0) { store.recordSignal(any()) }
     }
 
-    // ── recordUserMessage ─────────────────────────────────────────────────────
+    // ── onInput (correction detection) ───────────────────────────────────────
+
+    private fun msg(text: String, sessionId: String = "sess-1") =
+        Message(sender = "user1", text = text, channel = Channel.TELEGRAM)
 
     @Test
-    fun `recordUserMessage records CORRECTION for text containing wrong`() = runTest {
-        plugin.recordUserMessage("sess-1", "that is wrong, please fix it")
+    fun `onInput records CORRECTION for text containing wrong`() = runTest {
+        plugin.onInput(session, msg("that is wrong, please fix it"))
 
         val signalSlot = slot<Signal>()
         coVerify { store.recordSignal(capture(signalSlot)) }
@@ -106,8 +110,8 @@ class FeedbackPluginTest {
     }
 
     @Test
-    fun `recordUserMessage records CORRECTION for text with correction keyword`() = runTest {
-        plugin.recordUserMessage("sess-2", "actually that is not right")
+    fun `onInput records CORRECTION for text with correction keyword`() = runTest {
+        plugin.onInput(session, msg("actually that is not right"))
 
         val signalSlot = slot<Signal>()
         coVerify { store.recordSignal(capture(signalSlot)) }
@@ -115,22 +119,21 @@ class FeedbackPluginTest {
     }
 
     @Test
-    fun `recordUserMessage does not record signal for normal message`() = runTest {
-        plugin.recordUserMessage("sess-3", "can you help me with this task?")
+    fun `onInput does not record signal for normal message`() = runTest {
+        plugin.onInput(session, msg("can you help me with this task?"))
         coVerify(exactly = 0) { store.recordSignal(any()) }
     }
 
     @Test
-    fun `recordUserMessage is case-insensitive for keywords`() = runTest {
-        plugin.recordUserMessage("sess-4", "WRONG answer, try again")
-
+    fun `onInput is case-insensitive for keywords`() = runTest {
+        plugin.onInput(session, msg("WRONG answer, try again"))
         coVerify(exactly = 1) { store.recordSignal(any()) }
     }
 
     @Test
-    fun `recordUserMessage truncates long text in context`() = runTest {
+    fun `onInput truncates long text in context`() = runTest {
         val longText = "actually " + "x".repeat(200)
-        plugin.recordUserMessage("sess-5", longText)
+        plugin.onInput(session, msg(longText))
 
         val signalSlot = slot<Signal>()
         coVerify { store.recordSignal(capture(signalSlot)) }

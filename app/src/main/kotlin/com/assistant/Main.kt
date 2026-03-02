@@ -120,7 +120,6 @@ fun main() {
     lateinit var gateway: Gateway
     lateinit var activeMemory: SqliteMemoryStore
     lateinit var activeTokenTracker: TokenTracker
-    var activeFeedbackPlugin: FeedbackPlugin? = null
     var activeFeedbackStore: FeedbackStore? = null
 
     if (config.routing == null) {
@@ -131,7 +130,6 @@ fun main() {
         val feedbackStore = FeedbackStore(dbPath).also { it.init() }
         val feedbackPlugin = FeedbackPlugin(feedbackStore, defaultUserId)
         activeFeedbackStore = feedbackStore
-        activeFeedbackPlugin = feedbackPlugin
         val tokenTracker = TokenTracker()
         val metricsTool = MetricsTool(feedbackStore, tokenTracker, defaultUserId)
         val plugins: List<EnginePlugin> = listOf(LoggingPlugin(), feedbackPlugin)
@@ -293,8 +291,7 @@ fun main() {
     }
 
     println("Personal assistant starting... Send a message on Telegram!")
-    telegram.start { sessionId, userId, text, imageUrl ->
-        activeFeedbackPlugin?.recordUserMessage(sessionId, text)
+    telegram.start { _, userId, text, imageUrl ->
         gateway.handle(Message(sender = userId, text = text, channel = Channel.TELEGRAM, imageUrl = imageUrl))
     }
     heartbeat.start()

@@ -1,5 +1,6 @@
 package com.assistant.agent
 
+import com.assistant.domain.Message
 import com.assistant.domain.Observation
 import com.assistant.domain.Session
 import com.assistant.domain.ToolCall
@@ -14,6 +15,21 @@ class FeedbackPlugin(
 ) : EnginePlugin {
 
     override val name = "FeedbackPlugin"
+
+    private val correctionKeywords = listOf(
+        "no,", "wrong", "actually", "that's not", "correction:", "incorrect", "mistake"
+    )
+
+    override suspend fun onInput(session: Session, message: Message) {
+        if (correctionKeywords.any { message.text.lowercase().contains(it) }) {
+            store.recordSignal(Signal(
+                sessionId = session.id,
+                userId    = userId,
+                type      = SignalType.CORRECTION,
+                context   = message.text.take(120)
+            ))
+        }
+    }
 
     override suspend fun afterTool(session: Session, call: ToolCall, result: Observation, durationMs: Long) {
         if (result is Observation.Error) {
@@ -43,17 +59,4 @@ class FeedbackPlugin(
         }
     }
 
-    suspend fun recordUserMessage(sessionId: String, text: String) {
-        val correctionKeywords = listOf(
-            "no,", "wrong", "actually", "that's not", "correction:", "incorrect", "mistake"
-        )
-        if (correctionKeywords.any { text.lowercase().contains(it) }) {
-            store.recordSignal(Signal(
-                sessionId = sessionId,
-                userId    = userId,
-                type      = SignalType.CORRECTION,
-                context   = text.take(120)
-            ))
-        }
-    }
 }
