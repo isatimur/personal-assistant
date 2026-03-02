@@ -42,8 +42,11 @@ class FileSystemTool(allowedPaths: List<String> = listOf(System.getProperty("use
         )
     )
 
+    private fun resolvePath(path: String): String =
+        path.replace("~", System.getProperty("user.home"))
+
     private fun assertAllowed(path: String) {
-        val canonical = File(path).canonicalFile
+        val canonical = File(resolvePath(path)).canonicalFile
         check(allowedRoots.any { canonical.startsWith(it) }) {
             "Access denied: $path is outside allowed paths"
         }
@@ -52,7 +55,7 @@ class FileSystemTool(allowedPaths: List<String> = listOf(System.getProperty("use
     override suspend fun execute(call: ToolCall): Observation = runCatching {
         when (call.name) {
             "file_read" -> {
-                val path = call.arguments["path"] as String
+                val path = resolvePath(call.arguments["path"] as String)
                 assertAllowed(path)
                 val file = File(path)
                 val bytes = file.readBytes()
@@ -64,22 +67,24 @@ class FileSystemTool(allowedPaths: List<String> = listOf(System.getProperty("use
                 }
             }
             "file_write" -> {
-                val path = call.arguments["path"] as String
+                val path = resolvePath(call.arguments["path"] as String)
+                val content = call.arguments["content"] as? String
+                    ?: return@runCatching Observation.Error("file_write: 'content' argument is required")
                 assertAllowed(path)
                 val file = File(path)
                 file.parentFile?.mkdirs()
-                file.writeText(call.arguments["content"] as String)
+                file.writeText(content)
                 Observation.Success("Written to $path")
             }
             "file_list" -> {
-                val path = call.arguments["path"] as String
+                val path = resolvePath(call.arguments["path"] as String)
                 assertAllowed(path)
                 val files = File(path).listFiles()
                     ?.joinToString("\n") { it.name } ?: "(empty)"
                 Observation.Success(files)
             }
             "file_delete" -> {
-                val path = call.arguments["path"] as String
+                val path = resolvePath(call.arguments["path"] as String)
                 assertAllowed(path)
                 File(path).delete()
                 Observation.Success("Deleted $path")
