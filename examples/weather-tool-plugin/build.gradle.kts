@@ -1,7 +1,7 @@
 plugins {
     // For a standalone plugin outside this repo, also add:
-    // kotlin("jvm") version "1.9.25"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    // kotlin("jvm") version "2.1.20"
+    id("com.gradleup.shadow") version "8.3.6"
 }
 
 dependencies {
