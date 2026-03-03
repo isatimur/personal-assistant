@@ -18,7 +18,11 @@ import com.assistant.ports.EnginePlugin
 import com.assistant.ports.ToolPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.discord.DiscordAdapter
+import com.assistant.slack.SlackAdapter
 import com.assistant.telegram.TelegramAdapter
+import com.assistant.tts.OpenAiTtsProvider
+import com.assistant.webchat.WebChatAdapter
+import com.assistant.whatsapp.WhatsAppAdapter
 import com.assistant.tools.MetricsTool
 import com.assistant.tools.agent.AskAgentTool
 import com.assistant.tools.email.EmailConfig
@@ -225,6 +229,10 @@ fun main() {
     val voiceApiKey = if (config.voice.apiKey.isNotBlank()) config.voice.apiKey
                       else config.llm.apiKey ?: ""
 
+    val ttsProvider = if (config.voice.tts && voiceApiKey.isNotBlank()) {
+        OpenAiTtsProvider(voiceApiKey, voice = config.voice.voice)
+    } else null
+
     val telegram = TelegramAdapter(
         config.telegram.token,
         gateway,
@@ -233,7 +241,8 @@ fun main() {
         modelName = config.llm.model,
         tokenTracker = activeTokenTracker,
         voiceEnabled = config.voice.enabled,
-        voiceApiKey = voiceApiKey
+        voiceApiKey = voiceApiKey,
+        ttsPort = ttsProvider
     )
 
     val reminderManager = ReminderManager(
@@ -297,11 +306,41 @@ fun main() {
     heartbeat.start()
 
     if (config.discord.enabled) {
-        val discord = DiscordAdapter(config.discord.token)
+        val discord = DiscordAdapter(config.discord.token, gateway)
         discord.start { _, userId, text, imageUrl ->
             gateway.handle(Message(sender = userId, text = text, channel = Channel.DISCORD, imageUrl = imageUrl))
         }
         println("Discord adapter started")
+    }
+
+    if (config.slack.enabled) {
+        val slack = SlackAdapter(gateway, config.slack.botToken, config.slack.appToken)
+        slack.start { _, userId, text, imageUrl ->
+            gateway.handle(Message(sender = userId, text = text, channel = Channel.SLACK, imageUrl = imageUrl))
+        }
+        println("Slack adapter started")
+    }
+
+    if (config.webchat.enabled) {
+        val webchat = WebChatAdapter(gateway, config.webchat.port, config.webchat.basePath)
+        webchat.start { _, userId, text, imageUrl ->
+            gateway.handle(Message(sender = userId, text = text, channel = Channel.WEBCHAT, imageUrl = imageUrl))
+        }
+        println("WebChat UI started on http://localhost:${config.webchat.port}/")
+    }
+
+    if (config.whatsapp.enabled) {
+        val whatsapp = WhatsAppAdapter(
+            gateway,
+            config.whatsapp.token,
+            config.whatsapp.phoneNumberId,
+            config.whatsapp.verifyToken,
+            config.whatsapp.port
+        )
+        whatsapp.start { _, userId, text, imageUrl ->
+            gateway.handle(Message(sender = userId, text = text, channel = Channel.WHATSAPP, imageUrl = imageUrl))
+        }
+        println("WhatsApp adapter started on port ${config.whatsapp.port}")
     }
 
     val mainScope = CoroutineScope(Dispatchers.Default)

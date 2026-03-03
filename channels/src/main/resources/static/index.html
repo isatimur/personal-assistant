@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assistant</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #1a1a2e; color: #e0e0e0; height: 100dvh;
+         display: flex; flex-direction: column; }
+  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex;
+          flex-direction: column; gap: 12px; }
+  .msg { max-width: 80%; padding: 10px 14px; border-radius: 14px;
+         line-height: 1.5; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: #4a90d9; color: #fff; }
+  .msg.bot  { align-self: flex-start; background: #2a2a4a; color: #e0e0e0; }
+  .msg.bot pre { background: #1a1a2e; border-radius: 6px; padding: 8px;
+                 overflow-x: auto; font-size: 0.85em; margin: 6px 0; }
+  .msg.bot code { font-family: 'Courier New', monospace; }
+  .msg.bot p { margin: 4px 0; }
+  #footer { padding: 12px 16px; background: #16162a;
+            display: flex; gap: 8px; border-top: 1px solid #2a2a4a; }
+  #input { flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid #3a3a5a;
+           background: #2a2a4a; color: #e0e0e0; font-size: 15px; outline: none;
+           resize: none; min-height: 42px; max-height: 120px; overflow-y: auto; }
+  #input:focus { border-color: #4a90d9; }
+  #send { padding: 10px 18px; border-radius: 10px; border: none;
+          background: #4a90d9; color: #fff; font-size: 15px; cursor: pointer;
+          font-weight: 600; transition: background .15s; align-self: flex-end; }
+  #send:hover { background: #3a80c9; }
+  #send:disabled { background: #3a3a5a; cursor: default; }
+  .cursor { display: inline-block; width: 8px; height: 1em; background: #4a90d9;
+            vertical-align: text-bottom; animation: blink .8s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #status { font-size: 12px; color: #6a6a8a; padding: 2px 0; min-height: 18px; }
+</style>
+</head>
+<body>
+<div id="chat"></div>
+<div id="footer">
+  <textarea id="input" rows="1" placeholder="Message…" autocomplete="off"></textarea>
+  <button id="send">Send</button>
+</div>
+
+<script>
+const chat   = document.getElementById('chat');
+const input  = document.getElementById('input');
+const sendBtn= document.getElementById('send');
+
+// Auto-grow textarea
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+
+const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+let ws = null;
+let botDiv = null;    // current streaming bot message div
+let botText = '';     // accumulated text for current bot message
+
+function connect() {
+  ws = new WebSocket(`${proto}//${location.host}/chat`);
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+
+    if (msg.token !== undefined) {
+      // Streaming token
+      if (!botDiv) {
+        botText = '';
+        botDiv = addMsg('bot', '');
+      }
+      botText += msg.token;
+      botDiv.innerHTML = marked.parse(botText) + '<span class="cursor"></span>';
+      chat.scrollTop = chat.scrollHeight;
+    } else if (msg.done) {
+      // Streaming complete
+      if (botDiv) {
+        botDiv.innerHTML = marked.parse(botText);
+        botDiv = null;
+        botText = '';
+      }
+      sendBtn.disabled = false;
+      chat.scrollTop = chat.scrollHeight;
+    } else if (msg.error) {
+      if (botDiv) { botDiv.remove(); botDiv = null; }
+      addMsg('bot', '⚠️ ' + msg.error);
+      sendBtn.disabled = false;
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 2000);  // auto-reconnect
+  ws.onerror = () => ws.close();
+}
+
+function addMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = role === 'bot' ? marked.parse(text) : escapeHtml(text);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function send() {
+  const text = input.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  addMsg('user', text);
+  ws.send(JSON.stringify({ text }));
+  input.value = '';
+  input.style.height = 'auto';
+  sendBtn.disabled = true;
+}
+
+sendBtn.addEventListener('click', send);
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+connect();
+</script>
+</body>
+</html>

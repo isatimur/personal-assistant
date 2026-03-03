@@ -38,7 +38,11 @@ class AgentEngineTest {
             FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}"),
             FunctionCompletion.Text("fast model placeholder")
         )
-        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Found files in /tmp")
+        coEvery { llm.stream(any(), any()) } coAnswers {
+            val onToken = secondArg<suspend (String) -> Unit>()
+            onToken("Found files in /tmp")
+            "Found files in /tmp"
+        }
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt\nb.txt")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
@@ -68,7 +72,7 @@ class AgentEngineTest {
             FunctionCompletion.FunctionCall("file_write", "{\"path\": \"/tmp/test.txt\", \"content\": \"hello world\"}"),
             FunctionCompletion.Text("fast model placeholder")
         )
-        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("Done")
+        coEvery { llm.stream(any(), any()) } coAnswers { "Done" }
         coEvery { toolRegistry.execute(capture(capturedCall)) } returns Observation.Success("Written")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5)
@@ -96,7 +100,11 @@ class AgentEngineTest {
             FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}"),
             FunctionCompletion.Text("fast model placeholder")
         )
-        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("done")
+        coEvery { llm.stream(any(), any()) } coAnswers {
+            val onToken = secondArg<suspend (String) -> Unit>()
+            onToken("done")
+            "done"
+        }
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
 
         val progressMessages = mutableListOf<String>()
@@ -106,6 +114,7 @@ class AgentEngineTest {
             Message("user1", "list files", Channel.TELEGRAM),
             onProgress = { progressMessages.add(it) }
         )
+        // Tool progress message should appear; streaming tokens arrive prefixed with STREAM_TOKEN_PREFIX
         assertTrue(progressMessages.any { it.contains("file_list") })
     }
 
@@ -143,15 +152,17 @@ class AgentEngineTest {
             FunctionCompletion.FunctionCall("file_list", "{\"path\": \"/tmp\"}", TokenUsage(100, 50)),
             FunctionCompletion.Text("done")
         )
-        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("done", TokenUsage(200, 80))
+        // Streaming synthesis step: token usage is not reported (returns null)
+        coEvery { llm.stream(any(), any()) } coAnswers { "done" }
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("a.txt")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, maxSteps = 5, tokenTracker = tracker)
         engine.process(Session("s1", "user1", Channel.TELEGRAM), Message("user1", "hi", Channel.TELEGRAM))
 
         val stats = tracker.sessionStats("s1")
-        assertEquals(300L, stats.inputTokens)
-        assertEquals(130L, stats.outputTokens)
+        // Only the function call usage is tracked (100 in + 50 out); streaming synthesis has no usage
+        assertEquals(100L, stats.inputTokens)
+        assertEquals(50L, stats.outputTokens)
     }
 
     @Test
@@ -163,7 +174,7 @@ class AgentEngineTest {
             FunctionCompletion.FunctionCall("shell_run", "{\"command\": \"echo hi\"}"),
             FunctionCompletion.Text("placeholder")
         )
-        coEvery { llm.completeWithFunctions(any(), any()) } returns FunctionCompletion.Text("done")
+        coEvery { llm.stream(any(), any()) } coAnswers { "done" }
         coEvery { toolRegistry.execute(any()) } returns Observation.Success("hi")
 
         val engine = AgentEngine(llm, memory, toolRegistry, assembler, plugins = listOf(plugin))

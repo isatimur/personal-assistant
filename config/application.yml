@@ -62,10 +62,29 @@ tools:
 voice:
   enabled: false  # set to true once you add an OpenAI api-key below (Whisper requires OpenAI, not Anthropic)
   api-key: ""     # set your OpenAI key here (in secrets.yml under voice.api-key)
+  tts: false      # set to true to enable TTS voice responses (replies with audio when user sends voice)
+  voice: nova     # alloy | echo | fable | onyx | nova | shimmer
 
 discord:
   token: ""       # Bot token from https://discord.com/developers/applications
   enabled: false  # Set to true once token is configured
+
+slack:
+  enabled: false
+  bot-token: ""   # xoxb-... (Bot Token from OAuth & Permissions)
+  app-token: ""   # xapp-... (App-Level Token with connections:write scope, for Socket Mode)
+
+webchat:
+  enabled: false
+  port: 8080      # HTTP + WebSocket port; open http://localhost:8080 in browser
+  base-path: ""   # Optional path prefix (e.g. /assistant)
+
+whatsapp:
+  enabled: false
+  token: ""                # Meta WhatsApp Business Cloud API Bearer token
+  phone-number-id: ""      # WhatsApp Phone Number ID from Meta dashboard
+  verify-token: assistant  # Token you set when configuring the webhook in Meta
+  port: 8081               # Webhook HTTP server port (must be publicly accessible via HTTPS)
 
 heartbeat:
   enabled: true

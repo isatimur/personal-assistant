@@ -26,12 +26,30 @@ sealed class FunctionCompletion {
     data class FunctionCall(val name: String, val argsJson: String, val usage: TokenUsage? = null) : FunctionCompletion()
 }
 
+/**
+ * Prefix used in `onProgress` callbacks to signal real LLM streaming tokens (vs tool messages).
+ * TelegramAdapter and other channel adapters check for this prefix to distinguish token
+ * fragments from tool-use progress messages like "Using shell...".
+ */
+const val STREAM_TOKEN_PREFIX = "\u0001"
+
 interface LlmPort {
     suspend fun complete(messages: List<ChatMessage>): String
     suspend fun completeWithFunctions(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion
     /** Uses a faster/cheaper model for tool-selection steps. Defaults to the standard model. */
     suspend fun completeWithFunctionsFast(messages: List<ChatMessage>, commands: List<CommandSpec>): FunctionCompletion =
         completeWithFunctions(messages, commands)
+    /**
+     * Streams the final text response token-by-token, calling [onToken] for each fragment.
+     * Returns the full accumulated text. Does not support function calls — use for the
+     * final synthesis step only.
+     */
+    suspend fun stream(messages: List<ChatMessage>, onToken: suspend (String) -> Unit): String
+}
+
+interface TtsPort {
+    /** Synthesizes [text] to speech and returns the audio as MP3 bytes. */
+    suspend fun synthesize(text: String): ByteArray
 }
 
 interface ToolPort {

@@ -5,6 +5,8 @@ import com.assistant.ports.*
 import kotlinx.serialization.json.*
 import java.util.logging.Logger
 
+private const val MAX_SAFE_RESPONSE_LEN = 8_000
+
 class AgentEngine(
     private val llm: LlmPort,
     private val memory: MemoryPort,
@@ -61,22 +63,23 @@ class AgentEngine(
                         context.add(ChatMessage("user", obs))
                     }
                     is FunctionCompletion.Text -> {
-                        // If tool calls were made, re-invoke the standard model for a higher-quality final response.
+                        // If tool calls were made, re-invoke the standard model for the final synthesis.
+                        // Streaming is used so channel adapters can display tokens as they arrive.
                         // For simple queries that needed no tools, the fast model response is used directly.
-                        val finalCompletion = if (toolCallsMade) {
-                            // Final synthesis call — fires LLM hooks with the same stepIndex as the
-                            // reasoning step that produced the Text completion. This is intentional:
-                            // the synthesis is a continuation of the same step, not a new ReAct iteration.
+                        val finalText = if (toolCallsMade) {
+                            // Final synthesis — fires LLM hooks with the same stepIndex as the reasoning
+                            // step that produced the Text completion (synthesis continues the same step).
                             plugins.fireBeforeLlm(session, stepIndex, logger)
                             val start = System.currentTimeMillis()
-                            val result = llm.completeWithFunctions(context, commands)
-                            plugins.fireAfterLlm(session, stepIndex, result.usage(), System.currentTimeMillis() - start, logger)
-                            result
+                            val text = llm.stream(context) { token ->
+                                onProgress?.invoke("$STREAM_TOKEN_PREFIX$token")
+                            }
+                            plugins.fireAfterLlm(session, stepIndex, null, System.currentTimeMillis() - start, logger)
+                            text
                         } else {
-                            completion
+                            completion.content
                         }
-                        val finalText = if (finalCompletion is FunctionCompletion.Text) finalCompletion.content else completion.content
-                        tokenTracker?.record(session.id, finalCompletion.let { if (it is FunctionCompletion.Text) it.usage else null })
+                        tokenTracker?.record(session.id, if (toolCallsMade) null else completion.usage)
                         memory.append(session.id, Message("assistant", finalText, session.channel))
                         plugins.fireOnResponse(session, finalText, stepIndex + 1, logger)
                         return finalText

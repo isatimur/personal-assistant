@@ -26,7 +26,7 @@ import java.io.File
     val discovery: String = "static"  // "static" | "filesystem"
 )
 
-@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig(), val routing: RoutingConfig? = null, val reflection: ReflectionConfig = ReflectionConfig())
+@Serializable data class AppConfig(val telegram: TelegramConfig, val llm: LlmConfig, val memory: MemoryConfig, val tools: ToolsConfig, val embedding: EmbeddingCfg? = null, val heartbeat: HeartbeatConfig = HeartbeatConfig(), val voice: VoiceConfig = VoiceConfig(), val discord: DiscordConfig = DiscordConfig(), val routing: RoutingConfig? = null, val reflection: ReflectionConfig = ReflectionConfig(), val whatsapp: WhatsAppConfig = WhatsAppConfig(), val slack: SlackConfig = SlackConfig(), val webchat: WebChatConfig = WebChatConfig())
 @Serializable data class TelegramConfig(val token: String, @SerialName("timeout-ms") val timeoutMs: Long = 120_000)
 @Serializable data class LlmConfig(val provider: String, val model: String, @SerialName("api-key") val apiKey: String? = null, @SerialName("base-url") val baseUrl: String? = null, @SerialName("fast-model") val fastModel: String? = null)
 @Serializable data class MemoryConfig(@SerialName("db-path") val dbPath: String, @SerialName("window-size") val windowSize: Int, @SerialName("search-limit") val searchLimit: Int = 5)
@@ -34,7 +34,12 @@ import java.io.File
 @Serializable data class GitHubConfig(val enabled: Boolean = false, val token: String = "")
 @Serializable data class JiraConfig(val enabled: Boolean = false, @SerialName("base-url") val baseUrl: String = "", val email: String = "", @SerialName("api-token") val apiToken: String = "")
 @Serializable data class LinearConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
-@Serializable data class VoiceConfig(val enabled: Boolean = false, @SerialName("api-key") val apiKey: String = "")
+@Serializable data class VoiceConfig(
+    val enabled: Boolean = false,
+    @SerialName("api-key") val apiKey: String = "",
+    val tts: Boolean = false,
+    val voice: String = "nova"   // alloy | echo | fable | onyx | nova | shimmer
+)
 @Serializable data class DiscordConfig(val token: String = "", val enabled: Boolean = false)
 @Serializable data class HttpToolConfig(val enabled: Boolean = true)
 @Serializable data class KnowledgeConfig(val enabled: Boolean = false)
@@ -47,6 +52,26 @@ import java.io.File
 @Serializable data class HeartbeatAgentConfig(val name: String, val cron: String, val prompt: String, val timezone: String = "")
 @Serializable data class ReflectionConfig(val enabled: Boolean = false, val cron: String = "0 23 * * *", @SerialName("lookback-hours") val lookbackHours: Int = 24, @SerialName("update-soul") val updateSoul: Boolean = true, @SerialName("update-skills") val updateSkills: Boolean = true, @SerialName("update-user") val updateUser: Boolean = true, @SerialName("dry-run") val dryRun: Boolean = true)
 
+@Serializable data class WhatsAppConfig(
+    val enabled: Boolean = false,
+    val token: String = "",
+    @SerialName("phone-number-id") val phoneNumberId: String = "",
+    @SerialName("verify-token") val verifyToken: String = "assistant",
+    val port: Int = 8081
+)
+
+@Serializable data class SlackConfig(
+    val enabled: Boolean = false,
+    @SerialName("bot-token") val botToken: String = "",
+    @SerialName("app-token") val appToken: String = ""
+)
+
+@Serializable data class WebChatConfig(
+    val enabled: Boolean = false,
+    val port: Int = 8080,
+    @SerialName("base-path") val basePath: String = ""
+)
+
 // Secrets overlay
 @Serializable data class TelegramSecrets(val token: String? = null)
 @Serializable data class LlmSecrets(@SerialName("api-key") val apiKey: String? = null)
@@ -57,6 +82,8 @@ import java.io.File
 @Serializable data class LinearSecrets(@SerialName("api-key") val apiKey: String? = null)
 @Serializable data class VoiceSecrets(@SerialName("api-key") val apiKey: String? = null)
 @Serializable data class DiscordSecrets(val token: String? = null)
+@Serializable data class WhatsAppSecrets(val token: String? = null)
+@Serializable data class SlackSecrets(@SerialName("bot-token") val botToken: String? = null, @SerialName("app-token") val appToken: String? = null)
 @Serializable data class WebSecrets(@SerialName("search-api-key") val searchApiKey: String? = null)
 @Serializable data class ToolsSecrets(val email: EmailSecrets? = null, val github: GitHubSecrets? = null, val jira: JiraSecrets? = null, val linear: LinearSecrets? = null, val web: WebSecrets? = null)
 @Serializable data class SecretsConfig(
@@ -65,7 +92,9 @@ import java.io.File
     val embedding: EmbeddingSecrets? = null,
     val tools: ToolsSecrets? = null,
     val voice: VoiceSecrets? = null,
-    val discord: DiscordSecrets? = null
+    val discord: DiscordSecrets? = null,
+    val whatsapp: WhatsAppSecrets? = null,
+    val slack: SlackSecrets? = null
 )
 
 fun loadConfig(basePath: String = "config/application.yml", secretsPath: String = "config/secrets.yml"): AppConfig {
@@ -80,6 +109,17 @@ fun loadConfig(basePath: String = "config/application.yml", secretsPath: String 
         embedding = secrets.embedding?.apiKey?.let { base.embedding?.copy(apiKey = it) } ?: base.embedding,
         voice = secrets.voice?.apiKey?.let { base.voice.copy(apiKey = it) } ?: base.voice,
         discord = secrets.discord?.token?.let { base.discord.copy(token = it) } ?: base.discord,
+        whatsapp = run {
+            var w = base.whatsapp
+            if (secrets.whatsapp?.token != null) w = w.copy(token = secrets.whatsapp.token)
+            w
+        },
+        slack = run {
+            var s = base.slack
+            if (secrets.slack?.botToken != null) s = s.copy(botToken = secrets.slack.botToken)
+            if (secrets.slack?.appToken != null) s = s.copy(appToken = secrets.slack.appToken)
+            s
+        },
         tools = run {
             var t = base.tools
             if (secrets.tools?.email != null) {

@@ -5,6 +5,8 @@ import com.assistant.domain.*
 import com.assistant.gateway.Gateway
 import com.assistant.ports.ChannelPort
 import com.assistant.ports.MemoryPort
+import com.assistant.ports.STREAM_TOKEN_PREFIX
+import com.assistant.ports.TtsPort
 import com.assistant.reminder.ReminderManager
 import com.assistant.reminder.parseReminderDuration
 import com.assistant.workspace.WorkspaceLoader
@@ -14,10 +16,12 @@ import com.github.kotlintelegrambot.dispatch
 import com.github.kotlintelegrambot.dispatcher.message
 import com.github.kotlintelegrambot.entities.ChatAction
 import com.github.kotlintelegrambot.entities.ChatId
+import com.github.kotlintelegrambot.entities.TelegramFile
 import com.github.kotlintelegrambot.extensions.filters.Filter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -34,6 +38,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 
@@ -48,17 +53,20 @@ class TelegramAdapter(
     private val startTime: Long = System.currentTimeMillis(),
     private val tokenTracker: TokenTracker? = null,
     private val voiceEnabled: Boolean = false,
-    private val voiceApiKey: String = ""
+    private val voiceApiKey: String = "",
+    private val ttsPort: TtsPort? = null
 ) : ChannelPort {
     private val logger = Logger.getLogger(TelegramAdapter::class.java.name)
     override val name = "telegram"
-    private var messageHandler: (suspend (String, String, String, String?) -> String)? = null
     private val scope = CoroutineScope(Dispatchers.IO)
     private val semaphore = Semaphore(4)
     private var telegramBot: Bot? = null
     private val onboarding = OnboardingManager(memory, workspaceDir)
     private val workspaceLoader = WorkspaceLoader(workspaceDir)
     var reminderManager: ReminderManager? = null
+
+    /** Per-chat voice mode: when true, bot replies with audio synthesized via TTS. */
+    private val voiceMode = ConcurrentHashMap<Long, Boolean>()
 
     private val httpClient by lazy {
         OkHttpClient.Builder()
@@ -89,14 +97,12 @@ class TelegramAdapter(
                 val filePath = fileResp?.body()?.result?.filePath ?: return@withContext null
                 val fileUrl = "https://api.telegram.org/file/bot$token/$filePath"
 
-                // Download audio bytes
                 val downloadReq = Request.Builder().url(fileUrl).build()
                 val audioBytes = httpClient.newCall(downloadReq).execute().use { resp ->
                     if (!resp.isSuccessful) return@withContext null
                     resp.body?.bytes() ?: return@withContext null
                 }
 
-                // POST to Whisper
                 val requestBody = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataPart(
@@ -214,6 +220,7 @@ class TelegramAdapter(
                     "Tokens (session): ${session.inputTokens} in / ${session.outputTokens} out\n" +
                     "Tokens (total):   ${global.inputTokens} in / ${global.outputTokens} out\n"
                 } else ""
+                val voiceModeStr = if (voiceMode.getOrDefault(chatId, false)) " | voice: on" else ""
                 bot.sendMessage(
                     ChatId.fromId(chatId),
                     "Bot status\n" +
@@ -222,8 +229,20 @@ class TelegramAdapter(
                     "Messages: ${stats.messageCount}\n" +
                     tokenLines +
                     (if (modelName.isNotBlank()) "Model: $modelName\n" else "") +
-                    "Uptime: $uptimeStr"
+                    "Uptime: $uptimeStr$voiceModeStr"
                 )
+            }
+            text == "/voice on" -> {
+                if (ttsPort == null) {
+                    bot.sendMessage(ChatId.fromId(chatId), "Voice responses are not enabled. Set voice.tts: true in config.")
+                } else {
+                    voiceMode[chatId] = true
+                    bot.sendMessage(ChatId.fromId(chatId), "Voice responses enabled. I'll reply with audio.")
+                }
+            }
+            text == "/voice off" -> {
+                voiceMode.remove(chatId)
+                bot.sendMessage(ChatId.fromId(chatId), "Voice responses disabled.")
             }
             text == "/help" -> {
                 bot.sendMessage(
@@ -236,6 +255,7 @@ class TelegramAdapter(
                     "/user — show your USER.md profile\n" +
                     "/user set <key> <value> — update a field in your profile\n" +
                     "/status — show memory stats and bot info\n" +
+                    "/voice on|off — toggle voice (TTS) responses\n" +
                     "/help — show this message"
                 )
             }
@@ -246,7 +266,13 @@ class TelegramAdapter(
         return true
     }
 
-    /** Runs the LLM pipeline for a fully-formed Message and streams the response. */
+    /**
+     * Runs the LLM pipeline and streams the response.
+     * Real tokens from the LLM synthesis step arrive via [onProgress] prefixed with
+     * [STREAM_TOKEN_PREFIX] and are used to progressively edit a single Telegram message.
+     * Tool-use progress messages (no prefix) are sent as separate messages.
+     * Falls back to a plain sendMessage when no streaming occurred (simple text responses).
+     */
     internal suspend fun handleProcessedMessage(bot: Bot, chatId: Long, msg: Message) {
         val typingJob = scope.launch {
             while (isActive) {
@@ -254,16 +280,80 @@ class TelegramAdapter(
                 delay(4_000)
             }
         }
+
+        // Streaming state — written by onProgress lambda (IO thread), read by streamJob (IO thread)
+        var streamMessageId: Long? = null          // null = initial message not sent yet
+        val tokenBuffer = StringBuilder()
+        var bufferSnapshot = ""
+
+        // Periodic updater: edits the streaming message every 500ms while tokens arrive
+        val streamJob = scope.launch {
+            while (isActive) {
+                delay(500)
+                val mid = streamMessageId ?: continue
+                val current = synchronized(tokenBuffer) { tokenBuffer.toString() }
+                if (current != bufferSnapshot && current.isNotBlank()) {
+                    bufferSnapshot = current
+                    try {
+                        bot.editMessageText(
+                            chatId = ChatId.fromId(chatId),
+                            messageId = mid,
+                            text = "$current\u25ae"    // ▮ cursor indicator
+                        )
+                    } catch (_: Exception) {
+                        // Rate-limited or message unchanged — skip this edit
+                    }
+                }
+            }
+        }
+
         try {
             semaphore.withPermit {
                 try {
                     val response = withTimeout(this@TelegramAdapter.timeoutMs) {
                         gateway.handle(msg) { progressMsg ->
-                            scope.launch { bot.sendMessage(ChatId.fromId(chatId), progressMsg) }
+                            if (progressMsg.startsWith(STREAM_TOKEN_PREFIX)) {
+                                val token = progressMsg.removePrefix(STREAM_TOKEN_PREFIX)
+                                synchronized(tokenBuffer) { tokenBuffer.append(token) }
+                                if (streamMessageId == null) {
+                                    // First token: cancel typing indicator, send placeholder
+                                    typingJob.cancel()
+                                    val sent = bot.sendMessage(ChatId.fromId(chatId), "\u25ae")
+                                    streamMessageId = sent.getOrNull()?.messageId
+                                }
+                            } else {
+                                // Tool-use progress message — send as a separate message
+                                scope.launch { bot.sendMessage(ChatId.fromId(chatId), progressMsg) }
+                            }
                         }
                     }
+
+                    streamJob.cancelAndJoin()
                     typingJob.cancel()
-                    streamToChat(bot, chatId, response)
+
+                    val mid = streamMessageId
+                    if (mid != null) {
+                        // Final edit — replace streaming placeholder with complete response
+                        bot.editMessageText(
+                            chatId = ChatId.fromId(chatId),
+                            messageId = mid,
+                            text = response
+                        )
+                    } else {
+                        // No streaming (simple text response) — send directly
+                        streamToChat(bot, chatId, response)
+                    }
+
+                    // TTS: if voice mode is on and TTS provider is configured, reply with audio
+                    if (voiceMode.getOrDefault(chatId, false) && ttsPort != null) {
+                        try {
+                            val audioBytes = ttsPort.synthesize(response)
+                            bot.sendVoice(chatId = ChatId.fromId(chatId), audio = TelegramFile.ByByteArray(audioBytes, "voice.ogg"))
+                        } catch (e: Exception) {
+                            logger.warning("TTS synthesis failed: ${e.message}")
+                        }
+                    }
+
                 } catch (e: TimeoutCancellationException) {
                     logger.severe("Request timed out for chat $chatId")
                     bot.sendMessage(ChatId.fromId(chatId), "Request timed out. Please try again.")
@@ -274,46 +364,16 @@ class TelegramAdapter(
             }
         } finally {
             typingJob.cancel()
+            streamJob.cancel()
         }
     }
 
-    /** Splits text into progressively longer strings for a "live typing" effect. */
-    internal fun buildStreamChunks(text: String, chunkSize: Int = 40): List<String> {
-        if (text.length <= chunkSize) return listOf(text)
-        val chunks = mutableListOf<String>()
-        var pos = chunkSize
-        while (pos < text.length) {
-            chunks.add(text.substring(0, pos))
-            pos += chunkSize
-        }
-        chunks.add(text)
-        return chunks
-    }
-
-    /** Sends text as a new message then edits it progressively to simulate streaming. */
+    /** Sends text as a new message. Used as fallback when no LLM streaming occurred. */
     internal suspend fun streamToChat(bot: Bot, chatId: Long, text: String) {
-        val chunks = buildStreamChunks(text)
-        if (chunks.size == 1) {
-            bot.sendMessage(ChatId.fromId(chatId), text)
-            return
-        }
-        val sent = bot.sendMessage(ChatId.fromId(chatId), chunks[0])
-        val messageId = sent.getOrNull()?.messageId ?: run {
-            bot.sendMessage(ChatId.fromId(chatId), text)
-            return
-        }
-        for (chunk in chunks.drop(1)) {
-            delay(80)
-            bot.editMessageText(
-                chatId = ChatId.fromId(chatId),
-                messageId = messageId,
-                text = chunk
-            )
-        }
+        bot.sendMessage(ChatId.fromId(chatId), text)
     }
 
     override fun start(onMessage: suspend (sessionId: String, userId: String, text: String, imageUrl: String?) -> String) {
-        messageHandler = onMessage
         startPolling()
     }
 
@@ -339,6 +399,7 @@ class TelegramAdapter(
                                 bot.sendMessage(ChatId.fromId(chatId), "Voice input is not enabled.")
                                 return@launch
                             }
+                            voiceMode[chatId] = true  // Voice in → voice out
                             val transcript = transcribeVoice(bot, voice.fileId)
                             if (transcript == null) {
                                 bot.sendMessage(ChatId.fromId(chatId), "Sorry, I couldn't transcribe that audio.")
@@ -365,8 +426,9 @@ class TelegramAdapter(
                             return@launch
                         }
 
-                        // 3. Text / command message
+                        // 3. Text / command message — switch off voice mode for text
                         val text = message.text ?: return@launch
+                        voiceMode[chatId] = false
                         if (!text.startsWith("/") && onboarding.isActive(chatId)) {
                             onboarding.handle(bot, chatId, text)
                             return@launch
