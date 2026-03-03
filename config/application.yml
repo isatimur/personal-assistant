@@ -75,7 +75,7 @@ slack:
   app-token: ""   # xapp-... (App-Level Token with connections:write scope, for Socket Mode)
 
 webchat:
-  enabled: false
+  enabled: true
   port: 8080      # HTTP + WebSocket port; open http://localhost:8080 in browser
   base-path: ""   # Optional path prefix (e.g. /assistant)
 
