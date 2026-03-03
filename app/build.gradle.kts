@@ -13,6 +13,7 @@ dependencies {
 tasks.shadowJar {
     archiveBaseName.set("assistant")
     archiveClassifier.set("")
+    archiveVersion.set("")
     mergeServiceFiles()
     manifest { attributes["Main-Class"] = "com.assistant.MainKt" }
 }
