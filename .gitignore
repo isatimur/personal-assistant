@@ -2,3 +2,5 @@
 **/build/
 config/secrets.yml
 CLAUDE.local.md
+channels/src/main/resources/static/
+channels/webchat-ui/node_modules/
