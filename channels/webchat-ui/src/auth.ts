@@ -17,13 +17,18 @@ export function isAuthenticated(): boolean {
 }
 
 export async function login(password: string): Promise<boolean> {
-  const res = await fetch('/api/auth', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  })
-  if (!res.ok) return false
-  const { token } = await res.json()
-  setToken(token)
-  return true
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (!res.ok) return false
+    const { token } = await res.json()
+    if (!token) return false
+    setToken(token)
+    return true
+  } catch {
+    return false
+  }
 }
