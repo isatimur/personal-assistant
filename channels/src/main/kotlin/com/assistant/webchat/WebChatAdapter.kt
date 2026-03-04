@@ -172,7 +172,7 @@ class WebChatAdapter(
 
                     get("/memory") {
                         val q = call.request.queryParameters["q"] ?: ""
-                        val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 50
+                        val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 50).coerceIn(1, 200)
                         val rows = if (q.isBlank()) memory?.listChunks(limit) ?: emptyList()
                                    else memory?.searchChunks(q, limit) ?: emptyList()
                         val json = rows.joinToString(",", "[", "]") {
@@ -184,7 +184,11 @@ class WebChatAdapter(
                     delete("/memory/{id}") {
                         val id = call.parameters["id"]?.toLongOrNull()
                             ?: run { call.respondText("""{"error":"bad id"}""", ContentType.Application.Json, HttpStatusCode.BadRequest); return@delete }
-                        memory?.deleteChunk(id)
+                        if (memory == null) {
+                            call.respondText("""{"ok":false,"reason":"memory not configured"}""", ContentType.Application.Json, HttpStatusCode.ServiceUnavailable)
+                            return@delete
+                        }
+                        memory.deleteChunk(id)
                         call.respondText("""{"ok":true}""", ContentType.Application.Json)
                     }
 
@@ -220,9 +224,13 @@ class WebChatAdapter(
                         val name = call.parameters["file"]
                             ?: run { call.respond(HttpStatusCode.BadRequest); return@put }
                         if (name !in workspaceFiles) { call.respond(HttpStatusCode.Forbidden); return@put }
+                        if (workspace?.workspaceDir == null) {
+                            call.respondText("""{"ok":false,"reason":"workspace not configured"}""", ContentType.Application.Json, HttpStatusCode.ServiceUnavailable)
+                            return@put
+                        }
                         val body = Json.parseToJsonElement(call.receiveText()).jsonObject
                         val content = body["content"]?.jsonPrimitive?.content ?: ""
-                        workspace?.workspaceDir?.let { java.io.File(it, name).writeText(content) }
+                        workspace.workspaceDir?.let { java.io.File(it, name).writeText(content) }
                         call.respondText("""{"ok":true}""", ContentType.Application.Json)
                     }
 
