@@ -3,16 +3,40 @@ import { getSessions } from '../api'
 import { getToken } from '../auth'
 import styles from './Chat.module.css'
 
-// Minimal markdown: wrap code blocks, bold, newlines
-function renderMarkdown(text: string): string {
+function escapeHtml(text: string): string {
   return text
-    .replace(/```[\s\S]*?```/g, m => `<pre><code>${m.slice(3, -3).replace(/^[^\n]*\n/, '')}</code></pre>`)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br/>')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
-interface Msg { role: 'user' | 'bot'; text: string }
+// Minimal markdown: wrap code blocks, bold, newlines
+function renderMarkdown(text: string): string {
+  // Replace fenced code blocks first (so inner content isn't markdown-processed)
+  let remaining = text.replace(/```([^`]*?)```/gs, (_, inner) => {
+    const lang = inner.match(/^[^\n]*/)?.[0] ?? ''
+    const code = inner.replace(/^[^\n]*\n?/, '')
+    return `<pre><code>${escapeHtml(code)}</code></pre>`
+  })
+
+  // For the remaining text, escape HTML then apply inline markdown
+  // Split by the pre/code blocks we just created
+  const result = remaining
+    .split(/(<pre><code>[\s\S]*?<\/code><\/pre>)/g)
+    .map((part, i) => {
+      if (i % 2 === 1) return part // already processed code block
+      return escapeHtml(part)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br/>')
+    })
+    .join('')
+
+  return result
+}
+
+interface Msg { role: 'user' | 'bot'; id: number; text: string }
 interface Session { id: string; messages: number; lastActivity: number }
 
 export default function Chat() {
@@ -23,6 +47,8 @@ export default function Chat() {
   const wsRef = useRef<WebSocket | null>(null)
   const chatRef = useRef<HTMLDivElement>(null)
   const botTextRef = useRef('')
+  const mountedRef = useRef(true)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const connect = useCallback(() => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -30,41 +56,55 @@ export default function Chat() {
     const ws = new WebSocket(`${proto}//${location.host}/chat?token=${token}`)
 
     ws.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data)
-      if (msg.token !== undefined) {
-        botTextRef.current += msg.token
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          if (last?.role === 'bot') {
-            return [...prev.slice(0, -1), { role: 'bot', text: botTextRef.current }]
-          }
-          return [...prev, { role: 'bot', text: botTextRef.current }]
-        })
-        setTimeout(() => { chatRef.current?.scrollTo(0, chatRef.current.scrollHeight) }, 0)
-      } else if (msg.done) {
-        botTextRef.current = ''
-        setSending(false)
-      } else if (msg.error) {
-        setMessages(prev => [...prev, { role: 'bot', text: `⚠️ ${msg.error}` }])
+      try {
+        const msg = JSON.parse(ev.data)
+        if (msg.token !== undefined) {
+          botTextRef.current += msg.token
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last?.role === 'bot') {
+              return [...prev.slice(0, -1), { role: 'bot', id: last.id, text: botTextRef.current }]
+            }
+            return [...prev, { role: 'bot', id: Date.now(), text: botTextRef.current }]
+          })
+          setTimeout(() => { chatRef.current?.scrollTo(0, chatRef.current.scrollHeight) }, 0)
+        } else if (msg.done) {
+          botTextRef.current = ''
+          setSending(false)
+        } else if (msg.error) {
+          setMessages(prev => [...prev, { role: 'bot', id: Date.now(), text: `⚠️ ${escapeHtml(String(msg.error))}` }])
+          setSending(false)
+        }
+      } catch {
+        setMessages(prev => [...prev, { role: 'bot', id: Date.now(), text: '⚠️ Received invalid message from server' }])
         setSending(false)
       }
     }
 
-    ws.onclose = () => setTimeout(connect, 2000)
+    ws.onclose = () => {
+      if (mountedRef.current) {
+        reconnectTimerRef.current = setTimeout(connect, 2000)
+      }
+    }
     ws.onerror = () => ws.close()
     wsRef.current = ws
   }, [])
 
   useEffect(() => {
-    getSessions().then(setSessions)
+    mountedRef.current = true
+    getSessions().then(setSessions).catch(() => {})
     connect()
-    return () => wsRef.current?.close()
+    return () => {
+      mountedRef.current = false
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      wsRef.current?.close()
+    }
   }, [connect])
 
   function send() {
     const text = input.trim()
     if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    setMessages(prev => [...prev, { role: 'user', text }])
+    setMessages(prev => [...prev, { role: 'user', id: Date.now(), text }])
     wsRef.current.send(JSON.stringify({ text }))
     setInput('')
     setSending(true)
@@ -85,12 +125,12 @@ export default function Chat() {
       </aside>
       <div className={styles.chatArea}>
         <div className={styles.messages} ref={chatRef}>
-          {messages.map((m, i) => (
-            <div key={i} className={`${styles.msg} ${styles[m.role]}`}>
+          {messages.map((m) => (
+            <div key={m.id} className={`${styles.msg} ${styles[m.role]}`}>
               {m.role === 'bot'
                 ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
                 : m.text}
-              {m.role === 'bot' && sending && i === messages.length - 1 && (
+              {m.role === 'bot' && sending && m.id === messages[messages.length - 1]?.id && (
                 <span className={styles.cursor} />
               )}
             </div>
