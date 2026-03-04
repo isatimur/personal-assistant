@@ -327,11 +327,20 @@ fun main() {
             listOf(AgentInfo("default", listOf("telegram"),
                 config.memory.dbPath.replace("~", System.getProperty("user.home"))))
         } else {
-            config.routing.channels.entries.groupBy({ it.value }, { it.key })
+            val channelAgents = config.routing.channels.entries
+                .groupBy({ it.value }, { it.key })
                 .map { (agentName, channels) ->
                     val dbPath = File(globalDir, "agents/$agentName/memory.db").absolutePath
                     AgentInfo(agentName, channels, dbPath)
                 }
+            val coveredNames = channelAgents.map { it.name }.toSet()
+            val defaultName = config.routing.default
+            if (defaultName in coveredNames) {
+                channelAgents
+            } else {
+                channelAgents + AgentInfo(defaultName, emptyList(),
+                    File(globalDir, "agents/$defaultName/memory.db").absolutePath)
+            }
         }
         val webchat = WebChatAdapter(
             gateway = gateway,
