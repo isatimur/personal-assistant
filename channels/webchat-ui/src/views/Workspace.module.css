@@ -1,0 +1,17 @@
+.layout { display: flex; height: 100%; }
+.sidebar { width: 200px; background: var(--sidebar); border-right: 1px solid var(--border); padding: 12px 0; }
+.sidebarHeader { padding: 8px 16px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.fileItem { padding: 8px 16px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; color: var(--muted); transition: color .15s, background .15s; }
+.fileItem:hover { color: var(--text); background: rgba(255,255,255,.04); }
+.selected { color: var(--text) !important; background: rgba(124,58,237,.15) !important; }
+.exists { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.present { background: var(--success); }
+.absent { background: var(--border); }
+.editor { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.editorHeader { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+.filename { font-size: 13px; font-weight: 600; }
+.saveBtn { padding: 6px 16px; border-radius: var(--radius); border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; transition: background .15s; }
+.saveBtn:hover:not(:disabled) { background: var(--accent-hover); }
+.saveBtn:disabled { opacity: .7; cursor: default; }
+.textarea { flex: 1; padding: 20px; background: var(--bg); color: var(--text); border: none; outline: none; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; line-height: 1.7; resize: none; }
+.placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }

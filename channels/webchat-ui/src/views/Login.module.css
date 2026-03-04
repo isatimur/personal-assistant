@@ -1,0 +1,10 @@
+.page { display: flex; align-items: center; justify-content: center; height: 100vh; background: var(--bg); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 40px; width: 360px; display: flex; flex-direction: column; gap: 16px; }
+.title { font-size: 22px; font-weight: 700; text-align: center; }
+.sub { color: var(--muted); font-size: 13px; text-align: center; }
+.input { padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+.input:focus { border-color: var(--accent); }
+.error { color: var(--danger); font-size: 13px; }
+.btn { padding: 10px; border-radius: var(--radius); border: none; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; transition: background .15s; }
+.btn:hover:not(:disabled) { background: var(--accent-hover); }
+.btn:disabled { opacity: .5; cursor: default; }

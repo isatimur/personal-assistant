@@ -78,6 +78,9 @@ class SqliteMemoryStore(
         val createdAt = long("created_at")
     }
 
+    data class ChunkRow(val id: Long, val text: String, val sessionId: String, val createdAt: Long)
+    data class SessionRow(val sessionId: String, val messageCount: Int, val lastActivity: Long)
+
     fun init() {
         transaction(db) {
             SchemaUtils.create(Messages, Chunks)
@@ -89,6 +92,49 @@ class SqliteMemoryStore(
             ))
         }
         memoryDir.mkdirs()
+    }
+
+    fun listChunks(limit: Int = 100): List<ChunkRow> = transaction(db) {
+        val safeLimit = limit.coerceIn(1, 200)
+        Chunks.selectAll().orderBy(Chunks.createdAt, SortOrder.DESC).limit(safeLimit).map {
+            ChunkRow(it[Chunks.id].value, it[Chunks.text], it[Chunks.sessionId], it[Chunks.createdAt])
+        }
+    }
+
+    fun searchChunks(query: String, limit: Int = 20): List<ChunkRow> = transaction(db) {
+        val safeLimit = limit.coerceIn(1, 200)
+        val q = sanitizeFtsQuery(query)
+        if (q.isBlank()) return@transaction listChunks(safeLimit)
+        exec("""
+            SELECT c.id, c.text, c.session_id, c.created_at
+            FROM chunks c
+            JOIN chunks_fts fts ON fts.rowid = c.id
+            WHERE chunks_fts MATCH ?
+            ORDER BY rank LIMIT $safeLimit
+        """, listOf(TextColumnType() to q), null) { rs ->
+            val results = mutableListOf<ChunkRow>()
+            while (rs.next()) results.add(ChunkRow(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getLong(4)))
+            results
+        } ?: emptyList()
+    }
+
+    fun deleteChunk(id: Long): Unit = transaction(db) {
+        Chunks.deleteWhere { with(it) { Chunks.id inList listOf(id) } }
+    }
+
+    fun listSessions(limit: Int = 30): List<SessionRow> = transaction(db) {
+        val safeLimit = limit.coerceIn(1, 200)
+        exec("""
+            SELECT session_id, COUNT(*) as cnt, MAX(created_at) as last
+            FROM messages
+            GROUP BY session_id
+            ORDER BY last DESC
+            LIMIT $safeLimit
+        """) { rs ->
+            val results = mutableListOf<SessionRow>()
+            while (rs.next()) results.add(SessionRow(rs.getString(1), rs.getInt(2), rs.getLong(3)))
+            results
+        } ?: emptyList()
     }
 
     override suspend fun append(sessionId: String, message: Message) {
