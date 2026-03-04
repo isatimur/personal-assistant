@@ -78,6 +78,7 @@ webchat:
   enabled: true
   port: 8080      # HTTP + WebSocket port; open http://localhost:8080 in browser
   base-path: ""   # Optional path prefix (e.g. /assistant)
+  password: ""   # set in secrets.yml: webchat.password: "your-password"
 
 whatsapp:
   enabled: false

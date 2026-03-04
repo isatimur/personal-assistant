@@ -21,6 +21,7 @@ import com.assistant.discord.DiscordAdapter
 import com.assistant.slack.SlackAdapter
 import com.assistant.telegram.TelegramAdapter
 import com.assistant.tts.OpenAiTtsProvider
+import com.assistant.webchat.AgentInfo
 import com.assistant.webchat.WebChatAdapter
 import com.assistant.whatsapp.WhatsAppAdapter
 import com.assistant.tools.MetricsTool
@@ -322,7 +323,26 @@ fun main() {
     }
 
     if (config.webchat.enabled) {
-        val webchat = WebChatAdapter(gateway, config.webchat.port, config.webchat.basePath)
+        val agentInfoList: List<AgentInfo> = if (config.routing == null) {
+            listOf(AgentInfo("default", listOf("telegram"),
+                config.memory.dbPath.replace("~", System.getProperty("user.home"))))
+        } else {
+            config.routing.channels.entries.groupBy({ it.value }, { it.key })
+                .map { (agentName, channels) ->
+                    val dbPath = File(globalDir, "agents/$agentName/memory.db").absolutePath
+                    AgentInfo(agentName, channels, dbPath)
+                }
+        }
+        val webchat = WebChatAdapter(
+            gateway = gateway,
+            port = config.webchat.port,
+            basePath = config.webchat.basePath,
+            password = config.webchat.password,
+            memory = activeMemory,
+            workspace = workspace,
+            tokenTracker = activeTokenTracker,
+            agents = agentInfoList
+        )
         webchat.start { _, userId, text, imageUrl ->
             gateway.handle(Message(sender = userId, text = text, channel = Channel.WEBCHAT, imageUrl = imageUrl))
         }
