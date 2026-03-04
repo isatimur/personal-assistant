@@ -69,7 +69,8 @@ import java.io.File
 @Serializable data class WebChatConfig(
     val enabled: Boolean = false,
     val port: Int = 8080,
-    @SerialName("base-path") val basePath: String = ""
+    @SerialName("base-path") val basePath: String = "",
+    val password: String = ""
 )
 
 // Secrets overlay
@@ -85,6 +86,7 @@ import java.io.File
 @Serializable data class WhatsAppSecrets(val token: String? = null)
 @Serializable data class SlackSecrets(@SerialName("bot-token") val botToken: String? = null, @SerialName("app-token") val appToken: String? = null)
 @Serializable data class WebSecrets(@SerialName("search-api-key") val searchApiKey: String? = null)
+@Serializable data class WebChatSecrets(val password: String? = null)
 @Serializable data class ToolsSecrets(val email: EmailSecrets? = null, val github: GitHubSecrets? = null, val jira: JiraSecrets? = null, val linear: LinearSecrets? = null, val web: WebSecrets? = null)
 @Serializable data class SecretsConfig(
     val telegram: TelegramSecrets? = null,
@@ -94,7 +96,8 @@ import java.io.File
     val voice: VoiceSecrets? = null,
     val discord: DiscordSecrets? = null,
     val whatsapp: WhatsAppSecrets? = null,
-    val slack: SlackSecrets? = null
+    val slack: SlackSecrets? = null,
+    val webchat: WebChatSecrets? = null
 )
 
 fun loadConfig(basePath: String = "config/application.yml", secretsPath: String = "config/secrets.yml"): AppConfig {
@@ -146,6 +149,11 @@ fun loadConfig(basePath: String = "config/application.yml", secretsPath: String 
                 t = t.copy(web = t.web.copy(searchApiKey = secrets.tools.web.searchApiKey))
             }
             t
+        },
+        webchat = run {
+            var w = base.webchat
+            if (secrets.webchat?.password != null) w = w.copy(password = secrets.webchat.password)
+            w
         }
     )
 }
