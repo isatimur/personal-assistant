@@ -21,3 +21,24 @@ dependencies {
     implementation("jakarta.websocket:jakarta.websocket-api:2.1.1")
     implementation("org.glassfish.tyrus.bundles:tyrus-standalone-client:2.1.5")
 }
+
+// ── WebChat UI build ──────────────────────────────────────────────────────────
+val npmInstall by tasks.registering(Exec::class) {
+    workingDir = file("webchat-ui")
+    inputs.file("webchat-ui/package-lock.json")
+    outputs.dir("webchat-ui/node_modules")
+    commandLine("npm", "ci", "--prefer-offline")
+}
+
+val npmBuild by tasks.registering(Exec::class) {
+    dependsOn(npmInstall)
+    workingDir = file("webchat-ui")
+    inputs.dir("webchat-ui/src")
+    inputs.files("webchat-ui/package.json", "webchat-ui/vite.config.ts", "webchat-ui/tsconfig.app.json")
+    outputs.dir("src/main/resources/static")
+    commandLine("npm", "run", "build")
+}
+
+tasks.named("processResources") {
+    dependsOn(npmBuild)
+}
