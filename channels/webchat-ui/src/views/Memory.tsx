@@ -21,8 +21,12 @@ export default function Memory() {
   useEffect(() => { load() }, [load])
 
   async function handleDelete(id: number) {
-    await deleteMemory(id)
-    setRows(r => r.filter(x => x.id !== id))
+    try {
+      await deleteMemory(id)
+      setRows(r => r.filter(x => x.id !== id))
+    } catch {
+      // deletion failed — leave row in place, user can retry
+    }
   }
 
   return (
@@ -50,7 +54,7 @@ export default function Memory() {
             {rows.map(r => (
               <tr key={r.id}>
                 <td className={styles.textCell}>{r.text}</td>
-                <td className={styles.meta}>{r.sessionId.slice(0, 24)}…</td>
+                <td className={styles.meta}>{r.sessionId.length > 24 ? r.sessionId.slice(0, 24) + '…' : r.sessionId}</td>
                 <td className={styles.meta}>{new Date(r.createdAt).toLocaleDateString()}</td>
                 <td><button className={styles.del} onClick={() => handleDelete(r.id)}>×</button></td>
               </tr>
