@@ -1,0 +1,11 @@
+.page { padding: 32px; overflow-y: auto; height: 100%; }
+.title { font-size: 20px; font-weight: 700; margin-bottom: 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.cardHeader { display: flex; align-items: center; gap: 10px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.name { font-size: 15px; font-weight: 600; }
+.row { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.label { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); word-break: break-all; }
+.muted { color: var(--muted); }

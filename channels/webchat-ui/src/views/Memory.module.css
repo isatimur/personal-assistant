@@ -1,0 +1,14 @@
+.page { padding: 32px; overflow-y: auto; height: 100%; }
+.header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.title { font-size: 20px; font-weight: 700; }
+.search { flex: 1; max-width: 360px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13px; outline: none; }
+.search:focus { border-color: var(--accent); }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th { text-align: left; padding: 8px 12px; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+.table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tr:hover td { background: rgba(255,255,255,.03); }
+.textCell { max-width: 500px; line-height: 1.5; }
+.meta { color: var(--muted); white-space: nowrap; }
+.del { background: transparent; border: none; color: var(--muted); font-size: 18px; padding: 0 4px; transition: color .15s; }
+.del:hover { color: var(--danger); }
+.muted { color: var(--muted); padding: 16px 0; }
