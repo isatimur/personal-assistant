@@ -36,6 +36,7 @@ import com.assistant.tools.shell.ShellTool
 import com.assistant.tools.http.HttpTool
 import com.assistant.tools.knowledge.KnowledgeIngestTool
 import com.assistant.tools.web.WebBrowserTool
+import com.assistant.mcp.McpServerLoader
 import com.assistant.workspace.WorkspaceLoader
 import java.io.File
 import java.nio.file.Paths
@@ -118,7 +119,12 @@ fun main() {
             add(LinearTool(config.tools.linear.apiKey))
         }
         addAll(pluginLoader.loadTools())
+        addAll(McpServerLoader.load(globalDir))
     }
+
+    Runtime.getRuntime().addShutdownHook(Thread {
+        baseTools.filterIsInstance<java.io.Closeable>().forEach { runCatching { it.close() } }
+    })
 
     val defaultPlugins: List<EnginePlugin> = listOf(LoggingPlugin())
 

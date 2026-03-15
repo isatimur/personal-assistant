@@ -17,6 +17,12 @@ class McpServerLoaderTest {
     }
 
     @Test
+    fun `load returns empty list when file missing`() {
+        val result = McpServerLoader.load(dir)
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
     fun `loadConfigs parses single server correctly`() {
         File(dir, "mcp-servers.json").writeText("""
             {

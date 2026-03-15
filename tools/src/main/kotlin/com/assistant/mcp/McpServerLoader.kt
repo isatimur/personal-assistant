@@ -41,4 +41,14 @@ object McpServerLoader {
             emptyList()
         }
     }
+
+    /** Reads [globalDir]/mcp-servers.json and starts all configured MCP servers. */
+    fun load(globalDir: File): List<McpToolPort> {
+        val configFile = File(globalDir, "mcp-servers.json")
+        return loadConfigs(configFile).mapNotNull { config ->
+            McpToolPort.create(config).also {
+                if (it != null) logger.info("MCP server '${config.name}' started (${it.commands().size} tools)")
+            }
+        }
+    }
 }
