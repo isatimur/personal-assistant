@@ -10,6 +10,8 @@ import io.modelcontextprotocol.client.McpSyncClient
 import io.modelcontextprotocol.client.transport.ServerParameters
 import io.modelcontextprotocol.client.transport.StdioClientTransport
 import io.modelcontextprotocol.spec.McpSchema
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.logging.Logger
 
 class McpToolPort(
@@ -17,14 +19,15 @@ class McpToolPort(
     private val client: McpSyncClient
 ) : ToolPort, java.io.Closeable {
 
-    override val name: String get() = "mcp:$serverName"
+    // NOTE: server names must not collide with existing tool names (e.g. "shell", "web", "fs").
+    override val name: String get() = serverName
     override val description: String get() = "MCP server: $serverName"
 
     // Lazy-cached list of commands fetched once from the server.
     private val cachedCommands: List<CommandSpec> by lazy {
         try {
             val result = client.listTools()
-            result.tools().map { tool -> tool.toCommandSpec() }
+            result.tools().map { tool -> tool.toCommandSpec(serverName) }
         } catch (e: Exception) {
             logger.warning("[$serverName] Failed to list tools: ${e.message}")
             emptyList()
@@ -34,10 +37,13 @@ class McpToolPort(
     override fun commands(): List<CommandSpec> = cachedCommands
 
     override suspend fun execute(call: ToolCall): Observation {
+        // Strip the "${serverName}_" prefix before forwarding to the MCP SDK,
+        // which expects the original tool name (e.g. "read_file", not "filesystem_read_file").
+        val mcpToolName = call.name.removePrefix("${serverName}_")
         return try {
             val args = call.arguments
-            val request = McpSchema.CallToolRequest(call.name, args)
-            val result = client.callTool(request)
+            val request = McpSchema.CallToolRequest(mcpToolName, args)
+            val result = withContext(Dispatchers.IO) { client.callTool(request) }
 
             val text = result.content()
                 .filterIsInstance<McpSchema.TextContent>()
@@ -90,7 +96,7 @@ class McpToolPort(
 
 // ── Private extension ─────────────────────────────────────────────────────────
 
-private fun McpSchema.Tool.toCommandSpec(): CommandSpec {
+private fun McpSchema.Tool.toCommandSpec(serverName: String): CommandSpec {
     val schema = inputSchema()
     val properties: Map<String, Any> = schema?.properties() ?: emptyMap()
     val required: Set<String> = schema?.required()?.toSet() ?: emptySet()
@@ -114,7 +120,7 @@ private fun McpSchema.Tool.toCommandSpec(): CommandSpec {
     }
 
     return CommandSpec(
-        name = name(),
+        name = "${serverName}_${name()}",
         description = description() ?: "",
         params = params
     )

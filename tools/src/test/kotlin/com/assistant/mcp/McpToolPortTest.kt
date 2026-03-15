@@ -48,13 +48,13 @@ class McpToolPortTest {
             isError
         )
 
-    // ── test: name is prefixed ────────────────────────────────────────────────
+    // ── test: name equals serverName ─────────────────────────────────────────
 
     @Test
-    fun `name is prefixed with mcp colon`() {
+    fun `name equals serverName`() {
         val client = mockk<McpSyncClient>(relaxed = true)
         val port = McpToolPort("filesystem", client)
-        assertEquals("mcp:filesystem", port.name)
+        assertEquals("filesystem", port.name)
     }
 
     @Test
@@ -87,7 +87,7 @@ class McpToolPortTest {
 
         assertEquals(1, commands.size)
         val cmd = commands[0]
-        assertEquals("read_file", cmd.name)
+        assertEquals("filesystem_read_file", cmd.name)
         assertEquals("Read a file", cmd.description)
         assertEquals(4, cmd.params.size)
 
@@ -142,7 +142,8 @@ class McpToolPortTest {
         every { client.callTool(any()) } returns makeCallResult("file contents here")
 
         val port = McpToolPort("filesystem", client)
-        val result = port.execute(ToolCall("read_file", args))
+        // LLM calls the prefixed name; execute() must strip the prefix before forwarding.
+        val result = port.execute(ToolCall("filesystem_read_file", args))
 
         assertInstanceOf(Observation.Success::class.java, result)
         assertEquals("file contents here", (result as Observation.Success).result)
