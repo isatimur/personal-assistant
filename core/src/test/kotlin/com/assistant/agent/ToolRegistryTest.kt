@@ -10,13 +10,36 @@ import org.junit.jupiter.api.Assertions.*
 class ToolRegistryTest {
     @Test
     fun `dispatches to correct tool by command prefix`() = runTest {
-        val fileTool = mockk<ToolPort>()
-        every { fileTool.name } returns "file_system"
-        coEvery { fileTool.execute(any()) } returns Observation.Success("ok")
+        val shellTool = mockk<ToolPort>()
+        every { shellTool.name } returns "shell"
+        coEvery { shellTool.execute(any()) } returns Observation.Success("ok")
 
-        val registry = ToolRegistry(listOf(fileTool))
-        val result = registry.execute(ToolCall("file_read", mapOf("path" to "/tmp/test.txt")))
+        val registry = ToolRegistry(listOf(shellTool))
+        val result = registry.execute(ToolCall("shell_run", mapOf("command" to "echo hi")))
         assertTrue(result is Observation.Success)
+    }
+
+    @Test
+    fun `dispatches when call name exactly matches tool name`() = runTest {
+        val shellTool = mockk<ToolPort>()
+        every { shellTool.name } returns "shell"
+        coEvery { shellTool.execute(any()) } returns Observation.Success("ok")
+
+        val registry = ToolRegistry(listOf(shellTool))
+        val result = registry.execute(ToolCall("shell", mapOf()))
+        assertTrue(result is Observation.Success)
+    }
+
+    @Test
+    fun `does not dispatch tool name as prefix of unrelated command`() = runTest {
+        val shellTool = mockk<ToolPort>()
+        every { shellTool.name } returns "shell"
+        coEvery { shellTool.execute(any()) } returns Observation.Success("ok")
+
+        // "shellfish_open" starts with "shell" but is NOT "shell" and does NOT start with "shell_"
+        val registry = ToolRegistry(listOf(shellTool))
+        val result = registry.execute(ToolCall("shellfish_open", mapOf()))
+        assertTrue(result is Observation.Error)
     }
 
     @Test

@@ -45,15 +45,18 @@ class McpToolPort(
             val request = McpSchema.CallToolRequest(mcpToolName, args)
             val result = withContext(Dispatchers.IO) { client.callTool(request) }
 
-            val text = result.content()
+            val allContent = result.content()
+            val text = allContent
                 .filterIsInstance<McpSchema.TextContent>()
-                .joinToString("") { it.text() }
+                .joinToString("") { it.text() ?: "" }
 
             if (result.isError() == true) {
-                Observation.Error(text)
-            } else {
-                Observation.Success(text)
+                return Observation.Error(text.ifBlank { "MCP tool error (no message)" })
             }
+            if (text.isBlank() && allContent.isNotEmpty()) {
+                return Observation.Error("[$serverName] '${call.name}' returned non-text content (not supported)")
+            }
+            Observation.Success(text.ifBlank { "(no output)" })
         } catch (e: Exception) {
             Observation.Error(e.message ?: "Unknown error calling tool '${call.name}'")
         }

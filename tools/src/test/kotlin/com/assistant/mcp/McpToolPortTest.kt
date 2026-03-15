@@ -189,6 +189,21 @@ class McpToolPortTest {
         assertEquals("something went wrong", (result as Observation.Error).message)
     }
 
+    // ── test: execute() non-text content ──────────────────────────────────────
+
+    @Test
+    fun `execute returns Error when tool returns only non-text content`() = runTest {
+        val client = mockk<McpSyncClient>(relaxed = true)
+        every { client.listTools() } returns McpSchema.ListToolsResult(emptyList(), null)
+        // Return a non-TextContent (simulate ImageContent or other)
+        val imageContent = mockk<McpSchema.Content>()  // Not a TextContent
+        every { client.callTool(any()) } returns McpSchema.CallToolResult(listOf(imageContent), false)
+        val port = McpToolPort("filesystem", client)
+        val result = port.execute(ToolCall("filesystem_download_image", mapOf()))
+        assertTrue(result is Observation.Error)
+        assertTrue((result as Observation.Error).message.contains("non-text"))
+    }
+
     // ── test: execute() throws ────────────────────────────────────────────────
 
     @Test
