@@ -14,21 +14,27 @@ data class McpServerConfig(
 object McpServerLoader {
     private val logger = Logger.getLogger(McpServerLoader::class.java.name)
 
+    /** Parses [configFile] in Claude Code mcpServers format. Returns empty list on any error. */
     fun loadConfigs(configFile: File): List<McpServerConfig> {
         if (!configFile.exists()) return emptyList()
         return try {
             val root = Json.parseToJsonElement(configFile.readText()).jsonObject
             val servers = root["mcpServers"]?.jsonObject ?: return emptyList()
-            servers.entries.map { (name, value) ->
-                val obj = value.jsonObject
-                val args = obj["args"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
-                val env = obj["env"]?.jsonObject?.mapValues { (_, v) -> v.jsonPrimitive.content } ?: emptyMap()
-                McpServerConfig(
-                    name = name,
-                    command = obj["command"]!!.jsonPrimitive.content,
-                    args = args,
-                    env = env
-                )
+            servers.entries.mapNotNull { (name, value) ->
+                try {
+                    val obj = value.jsonObject
+                    val args = obj["args"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+                    val env = obj["env"]?.jsonObject?.mapValues { (_, v) -> v.jsonPrimitive.content } ?: emptyMap()
+                    McpServerConfig(
+                        name = name,
+                        command = obj["command"]!!.jsonPrimitive.content,
+                        args = args,
+                        env = env
+                    )
+                } catch (e: Exception) {
+                    logger.warning("Skipping MCP server '$name': ${e.message}")
+                    null
+                }
             }
         } catch (e: Exception) {
             logger.warning("Failed to parse mcp-servers.json: ${e.message}")

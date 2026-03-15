@@ -74,4 +74,19 @@ class McpServerLoaderTest {
         assertEquals(emptyList<String>(), result[0].args)
         assertEquals(emptyMap<String, String>(), result[0].env)
     }
+
+    @Test
+    fun `loadConfigs skips malformed server entry but loads valid ones`() {
+        File(dir, "mcp-servers.json").writeText("""
+            {
+              "mcpServers": {
+                "broken": { "args": [] },
+                "good": { "command": "npx", "args": [], "env": {} }
+              }
+            }
+        """.trimIndent())
+        val result = McpServerLoader.loadConfigs(File(dir, "mcp-servers.json"))
+        assertEquals(1, result.size)
+        assertEquals("good", result[0].name)
+    }
 }
