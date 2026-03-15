@@ -105,8 +105,8 @@ class McpToolPortTest {
         assertEquals("boolean", byName["flag"]!!.type)
         assertFalse(byName["flag"]!!.required)
 
-        // number → "integer"
-        assertEquals("integer", byName["size"]!!.type)
+        // number → "string" (floating-point; no ParamSpec equivalent)
+        assertEquals("string", byName["size"]!!.type)
         assertFalse(byName["size"]!!.required)
     }
 

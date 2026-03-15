@@ -17,8 +17,6 @@ class McpToolPort(
     private val client: McpSyncClient
 ) : ToolPort, java.io.Closeable {
 
-    private val logger = Logger.getLogger(McpToolPort::class.java.name)
-
     override val name: String get() = "mcp:$serverName"
     override val description: String get() = "MCP server: $serverName"
 
@@ -37,8 +35,7 @@ class McpToolPort(
 
     override suspend fun execute(call: ToolCall): Observation {
         return try {
-            @Suppress("UNCHECKED_CAST")
-            val args = call.arguments as Map<String, Any>
+            val args = call.arguments
             val request = McpSchema.CallToolRequest(call.name, args)
             val result = client.callTool(request)
 
@@ -103,9 +100,9 @@ private fun McpSchema.Tool.toCommandSpec(): CommandSpec {
         val propMap = propValue as? Map<String, Any> ?: emptyMap()
         val jsonType = propMap["type"] as? String ?: "string"
         val mappedType = when (jsonType) {
-            "integer", "number" -> "integer"
+            "integer" -> "integer"
             "boolean" -> "boolean"
-            else -> "string"
+            else -> "string"  // includes "number", "object", "array", and unknown types
         }
         val paramDescription = propMap["description"] as? String ?: propName
         ParamSpec(
